@@ -394,6 +394,8 @@ class HadocSub:
             self.setup_status.set("Please check the HTTPS URL, model name and API key.")
             return
         self.setup_status.set("Testing connection…")
+        if hasattr(self, "setup_status_label"):
+            self.setup_status_label.configure(text="Testing connection…", text_color=YELLOW)
         threading.Thread(target=self.api_test_worker, args=(base, model, key), daemon=True).start()
 
     def api_test_worker(self, base, model, key):
@@ -500,7 +502,6 @@ class HadocSub:
         self.make_label(file_card, "SELECTED FILE", "#8fa1b8", 9, "bold").grid(row=3, column=0, sticky="w", padx=20, pady=(3, 5))
         self.file_name_label = self.make_label(file_card, self.file_text.get(), TEXT, 11, anchor="w", wraplength=270, justify="left")
         self.file_name_label.grid(row=4, column=0, sticky="ew", padx=20)
-        self.file_text.trace_add("write", lambda *_: self.file_name_label.configure(text=self.file_text.get()))
         self.make_button(file_card, "Open another file", self.open_file, height=38).grid(row=5, column=0, sticky="ew", padx=17, pady=(17, 8))
         self.start_button = self.make_button(file_card, "▶   Start translation", self.start_translation, primary=True, height=48)
         self.start_button.grid(row=6, column=0, sticky="ew", padx=17, pady=(0, 9))
@@ -555,7 +556,6 @@ class HadocSub:
         progress_area.grid_columnconfigure(0, weight=1)
         self.status_label = self.make_label(progress_area, self.status_text.get(), MUTED, 10)
         self.status_label.grid(row=0, column=0, sticky="w")
-        self.status_text.trace_add("write", lambda *_: self.status_label.configure(text=self.status_text.get()))
         self.progress_percent = self.make_label(progress_area, "0%", ACCENT, 10, "bold")
         self.progress_percent.grid(row=0, column=1, sticky="e")
         self.progress_bar = ctk.CTkProgressBar(progress_area, height=7, corner_radius=4,
@@ -630,6 +630,7 @@ class HadocSub:
             return
         self.source_path = Path(name)
         self.file_text.set(self.source_path.name + "  •  " + f"{len(self.items):,} subtitles")
+        self.file_name_label.configure(text=self.file_text.get())
         self.count_text.set(str(len(self.items)))
         self.translated_text.set("0")
         self.selected = None
@@ -693,6 +694,8 @@ class HadocSub:
 
     def set_status(self, text, mode="ready"):
         self.status_text.set(text)
+        if hasattr(self, "status_label"):
+            self.status_label.configure(text=text)
         if hasattr(self, "progress_percent"):
             color = GREEN if mode == "success" else (YELLOW if mode == "working" else ACCENT)
             self.progress_percent.configure(text_color=color)
@@ -804,11 +807,11 @@ class HadocSub:
                 if kind == "api_test_ok":
                     self.setup_status.set(event[1])
                     if hasattr(self, "setup_status_label"):
-                        self.setup_status_label.configure(text_color=GREEN)
+                        self.setup_status_label.configure(text=event[1], text_color=GREEN)
                 elif kind == "api_test_error":
                     self.setup_status.set(event[1])
                     if hasattr(self, "setup_status_label"):
-                        self.setup_status_label.configure(text_color=YELLOW)
+                        self.setup_status_label.configure(text=event[1], text_color=YELLOW)
                 elif kind == "translated_row":
                     _, index, value = event
                     self.items[index].translated = value
@@ -826,6 +829,7 @@ class HadocSub:
                     self.progress_bar.set(pct / 100)
                     self.progress_percent.configure(text=f"{pct}%")
                     self.status_text.set(f"Translated {completed:,} of {total:,} subtitle lines")
+                    self.status_label.configure(text=self.status_text.get())
                     self.update_translation_progress()
                 elif kind == "translation_complete":
                     total = event[1]
