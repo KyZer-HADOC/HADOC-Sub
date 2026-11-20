@@ -342,8 +342,8 @@ class HadocSub:
         self.setup_status_label = self.make_label(
             form, "", YELLOW, 11, anchor="w", wraplength=560, justify="left"
         )
-        self.setup_status_label.configure(textvariable=self.setup_status)
         self.setup_status_label.grid(row=9, column=0, sticky="ew", pady=(0, 12))
+        self.setup_status.trace_add("write", lambda *_: self.setup_status_label.configure(text=self.setup_status.get()))
 
         actions = ctk.CTkFrame(form, fg_color="transparent")
         actions.grid(row=10, column=0, sticky="ew", pady=(0, 28))
@@ -498,9 +498,9 @@ class HadocSub:
         self.make_button(drop, "Browse SRT file", self.open_file, primary=True, height=40, width=190).pack(pady=(0, 18))
 
         self.make_label(file_card, "SELECTED FILE", "#8fa1b8", 9, "bold").grid(row=3, column=0, sticky="w", padx=20, pady=(3, 5))
-        self.file_name_label = self.make_label(file_card, "", TEXT, 11, anchor="w", wraplength=270, justify="left")
-        self.file_name_label.configure(textvariable=self.file_text)
+        self.file_name_label = self.make_label(file_card, self.file_text.get(), TEXT, 11, anchor="w", wraplength=270, justify="left")
         self.file_name_label.grid(row=4, column=0, sticky="ew", padx=20)
+        self.file_text.trace_add("write", lambda *_: self.file_name_label.configure(text=self.file_text.get()))
         self.make_button(file_card, "Open another file", self.open_file, height=38).grid(row=5, column=0, sticky="ew", padx=17, pady=(17, 8))
         self.start_button = self.make_button(file_card, "▶   Start translation", self.start_translation, primary=True, height=48)
         self.start_button.grid(row=6, column=0, sticky="ew", padx=17, pady=(0, 9))
