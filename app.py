@@ -12,7 +12,7 @@ from tkinter import filedialog, messagebox, ttk
 
 VERSION = "1.0.0"
 DEFAULT_URL = "https://api.groq.com/openai/v1"
-DEFAULT_MODEL = "llama-3.3-70b-versatile"
+DEFAULT_MODEL = "openai/gpt-oss-120b"
 BG, PANEL, ALT = "#0b0f17", "#121927", "#0e1623"
 BORDER, TEXT, MUTED = "#29364b", "#f2f5fb", "#8d9bb1"
 RED, GREEN, YELLOW = "#f0526c", "#6ce0ae", "#ffcb72"
