@@ -38,7 +38,7 @@ HADOC Sub uses an OpenAI-compatible chat-completions endpoint.
 
 Default provider settings:
 - API base URL: https://api.groq.com/openai/v1
-- Model: llama-3.3-70b-versatile
+- Model: openai/gpt-oss-120b
 
 Create an API key with your chosen provider, enter it in the API KEY field, open an SRT file, and click Translate to Sinhala. Provider model availability, rate limits, and any costs are controlled by that provider. Another compatible provider can be used by changing the API base URL and model.
 
