@@ -52,11 +52,11 @@ jobs:
           retention-days: 30
 
       - name: Publish GitHub Release
-        if: github.event_name == 'workflow_dispatch' && inputs.publish_release == true
+        if: (github.event_name == 'workflow_dispatch' && inputs.publish_release == true) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[publish-release]'))
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ inputs.release_tag }}
-          name: HADOC Sub ${{ inputs.release_tag }}
+          tag_name: ${{ inputs.release_tag || 'v1.0.0' }}
+          name: HADOC Sub ${{ inputs.release_tag || 'v1.0.0' }}
           target_commitish: ${{ github.sha }}
           files: dist/HADOC-Sub.exe
           generate_release_notes: true
