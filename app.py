@@ -265,6 +265,12 @@ class HadocSub:
             font=ctk.CTkFont(family=FONT, size=13), show=show
         )
 
+    def open_settings(self):
+        if self.busy:
+            messagebox.showinfo("Translation in progress", "Finish the current translation before changing API settings.")
+            return
+        self.show_setup(first_run=False)
+
     def show_setup(self, first_run=False):
         self.clear_root()
         self.root.grid_rowconfigure(0, weight=1)
@@ -447,7 +453,7 @@ class HadocSub:
 
         self.make_label(sidebar, "WORKSPACE", "#64758d", 9, "bold").pack(anchor="w", padx=22, pady=(0, 10))
         self.make_button(sidebar, "▤    SRT Translator", lambda: None, primary=True, height=43).pack(fill="x", padx=14, pady=4)
-        self.make_button(sidebar, "⚙    API Settings", lambda: self.show_setup(first_run=False), height=43).pack(fill="x", padx=14, pady=4)
+        self.make_button(sidebar, "⚙    API Settings", self.open_settings, height=43).pack(fill="x", padx=14, pady=4)
 
         spacer = ctk.CTkFrame(sidebar, fg_color="transparent")
         spacer.pack(fill="both", expand=True)
@@ -805,11 +811,11 @@ class HadocSub:
                 kind = event[0]
                 if kind == "api_test_ok":
                     self.setup_status.set(event[1])
-                    if hasattr(self, "setup_status_label"):
+                    if hasattr(self, "setup_status_label") and self.setup_status_label.winfo_exists():
                         self.setup_status_label.configure(text=event[1], text_color=GREEN)
                 elif kind == "api_test_error":
                     self.setup_status.set(event[1])
-                    if hasattr(self, "setup_status_label"):
+                    if hasattr(self, "setup_status_label") and self.setup_status_label.winfo_exists():
                         self.setup_status_label.configure(text=event[1], text_color=YELLOW)
                 elif kind == "translated_row":
                     _, index, value = event
