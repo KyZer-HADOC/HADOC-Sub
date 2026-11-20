@@ -1,68 +1,70 @@
 # HADOC Sub
 
-HADOC Sub is a Windows desktop application that translates English SubRip subtitle files (SRT) into natural Sinhala while preserving subtitle numbers and timestamps.
+HADOC Sub is a Windows desktop subtitle studio for translating English SRT files into natural Sinhala.
 
-## Current version: 1.0.0
+## Version 1.1.0
 
-- Windows 10 and Windows 11 desktop GUI.
+- Modern dark desktop interface built with CustomTkinter.
+- Opens maximized by default. Press F11 for true fullscreen and Esc to leave it.
+- First launch opens an API setup screen. Save the API details once to continue to the subtitle studio.
+- Google Gemini is the default provider. Groq and custom OpenAI-compatible providers are also supported.
+- Test the API connection before saving.
+- Provider, API URL, model name and encrypted API key are saved for the current Windows account.
+- API keys are encrypted with Windows DPAPI; they are not stored as plain text.
 - Opens UTF-8 and common Windows-encoded SRT files.
-- Translates subtitle entries in small batches through an OpenAI-compatible chat-completions API.
-- Groq is preconfigured as the default provider. The API URL and model name are editable.
-- Shows English and Sinhala subtitle text in a review table.
-- Lets you edit individual Sinhala subtitle entries.
-- Exports a UTF-8 SRT file with original subtitle numbering and timestamps.
-- Remembers the API URL and model, but never saves the API key.
-- Uses Python's built-in Tkinter and standard library. No extra runtime packages are needed when running from source.
+- Translates in small batches, preserving numbering and timestamps.
+- Shows English and Sinhala rows for review. Individual Sinhala lines can be edited.
+- Exports a UTF-8 Sinhala SRT file.
 
-## Download the Windows EXE
+## First launch
 
-1. Open the repository's Actions tab.
-2. Choose the workflow named Build HADOC Sub for Windows.
-3. Click Run workflow, or open the latest automatic build triggered by a push to main.
-4. When the run succeeds, open it and download the HADOC-Sub-Windows artifact.
-5. Extract the ZIP archive and run HADOC-Sub.exe.
+1. Run HADOC-Sub.exe.
+2. Choose Google Gemini (recommended default), Groq or Custom.
+3. Enter the API base URL, model and API key.
+4. Use Test API connection to check the details.
+5. Click Save & Start HADOC Sub.
+6. In the studio, open an English SRT, click Start translation, review the output and save the Sinhala SRT.
 
-The workflow builds a standalone Windows executable using PyInstaller.
+Settings can be changed later from API Settings or the Settings button.
 
-## Publish an official GitHub Release
+## Gemini defaults
 
-1. Open the repository's Actions tab.
-2. Select **Build HADOC Sub for Windows**.
-3. Click **Run workflow** and choose the `main` branch.
-4. Set **Publish the built EXE as a GitHub Release** to `true`.
-5. Keep the release tag as `v1.0.0` for the first release.
-6. Run the workflow. After the build succeeds, GitHub creates the release and attaches `HADOC-Sub.exe` to it.
+API base URL:
+https://generativelanguage.googleapis.com/v1beta/openai
 
-Future releases should use a new tag such as `v1.0.1`. Do not reuse an existing release tag.
+Model:
+gemini-3.5-flash-lite
 
-## Build locally on Windows
+Create a key:
+https://aistudio.google.com/apikey
 
-Install Python 3.11 or newer, then double-click build.bat or run it from PowerShell.
+Gemini API quotas and free-tier availability depend on the Google AI Studio project and can change. Check the current limits in Google AI Studio. An API key is required; subtitle text is sent to the provider you configure.
 
-The output executable will be created at:
+## Other providers
 
-dist\HADOC-Sub.exe
-
-## Translation API setup
-
-HADOC Sub uses an OpenAI-compatible chat-completions endpoint.
-
-Default provider settings:
+Groq preset:
 - API base URL: https://api.groq.com/openai/v1
 - Model: openai/gpt-oss-120b
 
-Create an API key with your chosen provider, enter it in the API KEY field, open an SRT file, and click Translate to Sinhala. Provider model availability, rate limits, and any costs are controlled by that provider. Another compatible provider can be used by changing the API base URL and model.
+Custom providers must support an OpenAI-compatible /chat/completions endpoint.
 
-Privacy notes:
-- The API key stays in memory during the current app session only.
-- The API key is not written to the settings file.
-- Subtitle text is sent to the API provider you configure for translation.
+## Download the Windows EXE
 
-## Important
+Open the Releases page and download HADOC-Sub.exe from the latest release:
+https://github.com/KyZer-HADOC/HADOC-Sub/releases
 
-- Subtitle numbering and timestamps are kept when saving.
-- The app checks that the model returned every requested subtitle item. Missing items trigger an error instead of silently shifting subtitles.
-- Any untranslated entries are preserved in the exported file, so review the translation before using it.
-- This first tool translates existing SRT files. Audio transcription and creating subtitles when no SRT exists are planned as a separate tool.
+## Build locally on Windows
+
+Install Python 3.11 or newer, then double-click build.bat. The generated EXE is placed in dist\HADOC-Sub.exe.
+
+The build installs dependencies from requirements.txt, runs syntax checks and SRT parser tests, then packages the desktop app using PyInstaller.
+
+## Notes
+
+- Subtitle numbering and timestamps are preserved.
+- If a provider rejects a batch or omits subtitle rows, the app reports an error instead of silently shifting subtitles.
+- Entries not translated are preserved as original English. Review before using the exported subtitle file.
+- API key encryption uses Windows DPAPI and is tied to the Windows user account that saved it.
+- This release translates existing SRT files. Audio transcription and subtitle generation without an SRT file will be a separate tool.
 
 Created by KyZer_HADOC.
