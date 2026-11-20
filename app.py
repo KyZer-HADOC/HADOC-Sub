@@ -400,7 +400,6 @@ class HadocSub:
         body = json.dumps({
             "model": model,
             "messages": [{"role": "user", "content": "Reply with only the word OK."}],
-            "temperature": 0
         }).encode("utf-8")
         request = urllib.request.Request(
             base + "/chat/completions", data=body,
@@ -554,7 +553,9 @@ class HadocSub:
         progress_area = ctk.CTkFrame(content, fg_color="transparent")
         progress_area.grid(row=3, column=0, sticky="ew", pady=(12, 0))
         progress_area.grid_columnconfigure(0, weight=1)
-        self.make_label(progress_area, "", MUTED, 10, textvariable=self.status_text).grid(row=0, column=0, sticky="w")
+        self.status_label = self.make_label(progress_area, self.status_text.get(), MUTED, 10)
+        self.status_label.grid(row=0, column=0, sticky="w")
+        self.status_text.trace_add("write", lambda *_: self.status_label.configure(text=self.status_text.get()))
         self.progress_percent = self.make_label(progress_area, "0%", ACCENT, 10, "bold")
         self.progress_percent.grid(row=0, column=1, sticky="e")
         self.progress_bar = ctk.CTkProgressBar(progress_area, height=7, corner_radius=4,
@@ -746,7 +747,6 @@ class HadocSub:
         user += json.dumps(payload, ensure_ascii=False)
         body = json.dumps({
             "model": model,
-            "temperature": 0.2,
             "messages": [
                 {"role": "system", "content": system},
                 {"role": "user", "content": user}
