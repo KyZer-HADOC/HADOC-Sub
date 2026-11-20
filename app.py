@@ -175,6 +175,7 @@ class HadocSub:
         self.selected = None
         self.busy = False
         self.fullscreen = False
+        self.on_setup_screen = False
         self.settings_path = Path(os.environ.get("APPDATA", str(Path.home()))) / "HADOC-Sub" / "settings.json"
 
         self.provider = tk.StringVar(value="Google Gemini")
@@ -272,6 +273,7 @@ class HadocSub:
         self.show_setup(first_run=False)
 
     def show_setup(self, first_run=False):
+        self.on_setup_screen = True
         self.clear_root()
         self.root.grid_rowconfigure(0, weight=1)
         self.root.grid_columnconfigure(0, weight=1)
@@ -427,6 +429,7 @@ class HadocSub:
             self.events.put(("api_test_error", "Connection failed: " + str(exc)))
 
     def show_main(self):
+        self.on_setup_screen = False
         self.clear_root()
         self.root.grid_rowconfigure(0, weight=1)
         self.root.grid_columnconfigure(0, weight=1)
@@ -811,7 +814,7 @@ class HadocSub:
                 kind = event[0]
                 if kind == "api_test_ok":
                     self.setup_status.set(event[1])
-                    if hasattr(self, "setup_status_label") and self.setup_status_label.winfo_exists():
+                    if self.on_setup_screen and hasattr(self, "setup_status_label"):
                         self.setup_status_label.configure(text=event[1], text_color=GREEN)
                 elif kind == "api_test_error":
                     self.setup_status.set(event[1])
