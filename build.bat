@@ -10,7 +10,6 @@ if %errorlevel%==0 (
     if errorlevel 1 goto failed
     py -m unittest discover -s tests -v
     if errorlevel 1 goto failed
-    if errorlevel 1 goto failed
     py -m PyInstaller --noconfirm --clean --onefile --windowed --collect-all customtkinter --collect-all darkdetect --name HADOC-Sub app.py
 ) else (
     python -m pip install -r requirements.txt
