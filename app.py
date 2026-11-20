@@ -460,7 +460,7 @@ class HadocSub:
         content = ctk.CTkFrame(shell, fg_color=BG, corner_radius=0)
         content.grid(row=0, column=1, sticky="nsew", padx=32, pady=25)
         content.grid_columnconfigure(0, weight=1)
-        content.grid_rowconfigure(3, weight=1)
+        content.grid_rowconfigure(2, weight=1)
 
         top = ctk.CTkFrame(content, fg_color="transparent")
         top.grid(row=0, column=0, sticky="ew", pady=(0, 23))
