@@ -14,7 +14,7 @@ on:
       release_tag:
         description: Release tag (for example v1.0.0)
         required: false
-        default: v1.0.0
+        default: v1.1.0
         type: string
 
 permissions:
@@ -34,14 +34,12 @@ jobs:
 
       - name: Run SRT parser tests and syntax checks
         run: |
+          python -m pip install -r requirements.txt
           python -m py_compile app.py
           python -m unittest discover -s tests -v
 
-      - name: Install PyInstaller
-        run: python -m pip install --upgrade pyinstaller
-
       - name: Build standalone EXE
-        run: pyinstaller --noconfirm --clean --onefile --windowed --name HADOC-Sub app.py
+        run: pyinstaller --noconfirm --clean --onefile --windowed --collect-all customtkinter --collect-all darkdetect --name HADOC-Sub app.py
 
       - name: Upload Windows application artifact
         uses: actions/upload-artifact@v4
@@ -55,8 +53,8 @@ jobs:
         if: (github.event_name == 'workflow_dispatch' && inputs.publish_release == true) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[publish-release]'))
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ inputs.release_tag || 'v1.0.0' }}
-          name: HADOC Sub ${{ inputs.release_tag || 'v1.0.0' }}
+          tag_name: ${{ inputs.release_tag || 'v1.1.0' }}
+          name: HADOC Sub ${{ inputs.release_tag || 'v1.1.0' }}
           target_commitish: ${{ github.sha }}
           files: dist/HADOC-Sub.exe
           generate_release_notes: true
