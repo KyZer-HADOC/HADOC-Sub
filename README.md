@@ -24,6 +24,17 @@ HADOC Sub is a Windows desktop application that translates English SubRip subtit
 
 The workflow builds a standalone Windows executable using PyInstaller.
 
+## Publish an official GitHub Release
+
+1. Open the repository's Actions tab.
+2. Select **Build HADOC Sub for Windows**.
+3. Click **Run workflow** and choose the `main` branch.
+4. Set **Publish the built EXE as a GitHub Release** to `true`.
+5. Keep the release tag as `v1.0.0` for the first release.
+6. Run the workflow. After the build succeeds, GitHub creates the release and attaches `HADOC-Sub.exe` to it.
+
+Future releases should use a new tag such as `v1.0.1`. Do not reuse an existing release tag.
+
 ## Build locally on Windows
 
 Install Python 3.11 or newer, then double-click build.bat or run it from PowerShell.
