@@ -183,6 +183,7 @@ class HadocSub:
         self.api_key = tk.StringVar()
         self.key_visible = False
         self.search_text = tk.StringVar()
+        self.search_text.trace_add("write", lambda *_: self.refresh_table())
         self.progress_value = tk.DoubleVar(value=0)
         self.status_text = tk.StringVar(value="Ready")
         self.file_text = tk.StringVar(value="No subtitle file selected")
@@ -343,7 +344,6 @@ class HadocSub:
             form, "", YELLOW, 11, anchor="w", wraplength=560, justify="left"
         )
         self.setup_status_label.grid(row=9, column=0, sticky="ew", pady=(0, 12))
-        self.setup_status.trace_add("write", lambda *_: self.setup_status_label.configure(text=self.setup_status.get()))
 
         actions = ctk.CTkFrame(form, fg_color="transparent")
         actions.grid(row=10, column=0, sticky="ew", pady=(0, 28))
@@ -521,7 +521,6 @@ class HadocSub:
         self.make_label(toolbar, "SUBTITLE ENTRIES", "#91a4bd", 9, "bold").pack(side="left", padx=(0, 10))
         self.search_entry = self.make_entry(toolbar, self.search_text, "Search subtitles…", height=35)
         self.search_entry.pack(side="right", fill="x", expand=True)
-        self.search_text.trace_add("write", lambda *_: self.refresh_table())
 
         table_wrap = ctk.CTkFrame(work_card, fg_color=PANEL_3, corner_radius=10)
         table_wrap.grid(row=2, column=0, sticky="nsew", padx=17)
