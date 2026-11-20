@@ -5,9 +5,20 @@ on:
     branches:
       - main
   workflow_dispatch:
+    inputs:
+      publish_release:
+        description: Publish the built EXE as a GitHub Release
+        required: false
+        default: false
+        type: boolean
+      release_tag:
+        description: Release tag (for example v1.0.0)
+        required: false
+        default: v1.0.0
+        type: string
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -32,10 +43,24 @@ jobs:
       - name: Build standalone EXE
         run: pyinstaller --noconfirm --clean --onefile --windowed --name HADOC-Sub app.py
 
-      - name: Upload Windows application
+      - name: Upload Windows application artifact
         uses: actions/upload-artifact@v4
         with:
           name: HADOC-Sub-Windows
           path: dist/HADOC-Sub.exe
           if-no-files-found: error
           retention-days: 30
+
+      - name: Publish GitHub Release
+        if: github.event_name == 'workflow_dispatch' && inputs.publish_release == true
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.release_tag }}
+          name: HADOC Sub ${{ inputs.release_tag }}
+          target_commitish: ${{ github.sha }}
+          files: dist/HADOC-Sub.exe
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
