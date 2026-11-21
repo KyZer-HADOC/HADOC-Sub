@@ -2,8 +2,10 @@ import unittest
 import urllib.parse
 
 from app import (
+    build_google_translate_url,
     build_mymemory_url,
     cloudflare_model_endpoint,
+    extract_google_translate_translations,
     extract_cloudflare_translation,
     extract_mymemory_translation,
     split_mymemory_chunks,
@@ -89,6 +91,40 @@ class ApiHelperTests(unittest.TestCase):
         chunks = split_mymemory_chunks(("ආයුබෝවන් " * 90).strip())
         self.assertTrue(chunks)
         self.assertTrue(all(len(chunk.encode("utf-8")) <= 450 for chunk in chunks))
+
+    def test_google_translate_url_batches_repeated_q_parameters(self):
+        url = build_google_translate_url(
+            "https://translate.googleapis.com/translate_a/t",
+            ["Hello", "How are you?"],
+            "en",
+            "si",
+        )
+        query = urllib.parse.parse_qs(urllib.parse.urlparse(url).query)
+        self.assertEqual(query["client"], ["dict-chrome-ex"])
+        self.assertEqual(query["sl"], ["en"])
+        self.assertEqual(query["tl"], ["si"])
+        self.assertEqual(query["q"], ["Hello", "How are you?"])
+
+    def test_google_translate_response_parses_multiple_lines(self):
+        response = [
+            ["හෙලෝ", "en"],
+            ["ඔයාට කොහොමද?", "en"],
+        ]
+        self.assertEqual(
+            extract_google_translate_translations(response, 2),
+            ["හෙලෝ", "ඔයාට කොහොමද?"],
+        )
+
+    def test_google_translate_response_rejects_missing_line(self):
+        with self.assertRaises(ValueError):
+            extract_google_translate_translations([["හෙලෝ", "en"]], 2)
+
+    def test_google_translate_response_joins_segments(self):
+        response = [[[["හෙලෝ", "hello"], [" ලෝකය", " world"]], "en"]]
+        self.assertEqual(
+            extract_google_translate_translations(response, 1),
+            ["හෙලෝ ලෝකය"],
+        )
 
 
 if __name__ == "__main__":
