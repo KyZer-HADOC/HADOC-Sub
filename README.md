@@ -2,49 +2,61 @@
 
 HADOC Sub is a Windows desktop subtitle studio for translating English SRT files into natural Sinhala.
 
-## Version 1.2.0
+## Version 1.3.0
 
 - Modern dark Windows desktop interface with maximized launch and F11 fullscreen.
-- Gemini is the default provider; Groq and custom OpenAI-compatible providers are supported.
-- First-launch API setup screen with connection test and secure settings.
-- API key is encrypted with Windows DPAPI and stored for the current Windows user.
-- Main studio has always-visible Open SRT, Start translation and Save SRT actions.
-- Larger subtitle table with search, English/Sinhala preview and manual editing.
-- Opens UTF-8 and common Windows-encoded SRT files.
-- Translates in batches while preserving subtitle numbering and timestamps.
-- Exports UTF-8 Sinhala SRT files.
+- First-run API setup with encrypted provider credentials.
+- Add multiple AI providers to a provider pool: Google Gemini, Groq, NVIDIA NIM, OpenRouter Free, or any compatible custom endpoint.
+- Automatic provider failover: if an API returns 429, an authentication error, a network failure, or an invalid response, HADOC Sub tries the next configured provider.
+- Smaller translation batches to reduce per-request token spikes.
+- Saves progress after every successful batch.
+- Resume support: reopen the same original SRT file and press Start translation; completed lines are skipped.
+- Subtitle table with search, English/Sinhala preview, manual editing and UTF-8 SRT export.
+- Original subtitle numbering and timestamps are preserved.
 
-## First launch
+## First launch and provider setup
 
 1. Run HADOC-Sub.exe.
-2. Choose Google Gemini, Groq or Custom.
-3. Enter the API URL, model name and API key.
-4. Click Test API connection to check the details.
-5. Click Save & Start HADOC Sub.
-6. In the studio, open an English SRT, click Start translation, review the Sinhala lines and save the result.
+2. Choose a provider preset such as Google Gemini or Groq.
+3. Enter that provider's API URL, model and API key.
+4. Click Test API, then Add to provider pool.
+5. Add other providers one at a time.
+6. Click Save & Start HADOC Sub.
+7. Open an English SRT and click Start translation.
 
-Settings can be changed later from API Settings or the Settings button.
+Settings can be changed later from API Settings. API keys are encrypted with Windows DPAPI and are bound to the Windows account that saved them.
 
-## Gemini defaults
+## Provider presets
 
-API base URL:
-https://generativelanguage.googleapis.com/v1beta/openai
+Google Gemini:
+- API URL: https://generativelanguage.googleapis.com/v1beta/openai
+- Default model: gemini-3.8-flash
+- API key: https://aistudio.google.com/apikey
 
-Model:
-gemini-3.5-flash-lite
+Groq:
+- API URL: https://api.groq.com/openai/v1
+- Default model: openai/gpt-oss-120b
+- API key: https://console.groq.com/keys
 
-Create a key:
-https://aistudio.google.com/apikey
+NVIDIA NIM:
+- API URL: https://integrate.api.nvidia.com/v1
+- Default model: nvidia/nemotron-3.5-super-vl-120b-a12b
+- API key: https://build.nvidia.com/explore/discover
 
-Gemini API quotas and free-tier availability depend on the Google AI Studio project and can change. Check current limits in Google AI Studio. Subtitle text is sent to the configured provider for translation.
+OpenRouter Free:
+- API URL: https://openrouter.ai/api/v1
+- Default model: openrouter/free
+- API key: https://openrouter.ai/settings/keys
+- Free model variants are currently limited to 20 requests per minute and 50 requests per day; availability and provider limits can change.
 
-## Other providers
+Custom:
+- Any provider that supports an OpenAI-compatible /chat/completions endpoint.
 
-Groq preset:
-- API base URL: https://api.groq.com/openai/v1
-- Model: openai/gpt-oss-120b
+## Rate limits and failover
 
-Custom providers must support an OpenAI-compatible /chat/completions endpoint.
+No free API is unlimited. Each provider enforces its own quotas. A pool lets the app switch to another configured service when one becomes unavailable; it does not increase the quota of a single provider account. Some provider limits are organization-wide, so adding extra keys within the same organization may not increase its quota.
+
+If every configured provider fails, translation pauses and already completed batches stay saved. Add or restore a provider, reopen the same source SRT if needed, and click Start translation to continue only the untranslated lines.
 
 ## Download
 
@@ -53,16 +65,8 @@ https://github.com/KyZer-HADOC/HADOC-Sub/releases
 
 ## Local build
 
-Install Python 3.11 or newer, then double-click build.bat. The generated executable is placed at dist\HADOC-Sub.exe.
+Install Python 3.11 or newer, then run build.bat. The generated EXE is placed at dist\HADOC-Sub.exe.
 
-The build installs requirements, runs syntax checks and SRT parser tests, then packages the app with PyInstaller.
-
-## Notes
-
-- Subtitle numbering and timestamps are preserved.
-- If the provider rejects a batch or omits subtitle rows, the app reports an error rather than silently shifting subtitles.
-- Untranslated entries remain in English; review the output before using it.
-- API key encryption uses Windows DPAPI and is tied to the Windows account that saved it.
-- This release translates existing SRT files. Audio transcription and generating subtitles without an SRT are a separate future tool.
+The build installs requirements.txt, runs syntax checks and unit tests, then packages the application using PyInstaller.
 
 Created by KyZer_HADOC.
