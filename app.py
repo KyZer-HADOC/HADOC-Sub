@@ -362,21 +362,20 @@ class HadocSub:
         canvas.grid(row=0, column=0, sticky="nsew")
         canvas.grid_columnconfigure(0, weight=1)
         canvas.grid_rowconfigure(0, weight=1)
-
         center = ctk.CTkFrame(canvas, fg_color="transparent")
         center.grid(row=0, column=0, sticky="nsew")
         center.grid_columnconfigure(0, weight=1)
         center.grid_rowconfigure(0, weight=1)
 
-        card = ctk.CTkFrame(
-            center, fg_color=PANEL, corner_radius=22,
-            border_width=1, border_color=BORDER, width=650
+        card = ctk.CTkScrollableFrame(
+            center, fg_color=PANEL, corner_radius=22, border_width=1,
+            border_color=BORDER, width=740, height=680
         )
-        card.place(relx=0.5, rely=0.5, anchor="center")
+        card.place(relx=0.5, rely=0.49, anchor="center")
         card.grid_columnconfigure(0, weight=1)
 
         head = ctk.CTkFrame(card, fg_color="transparent")
-        head.grid(row=0, column=0, sticky="ew", padx=34, pady=(30, 8))
+        head.grid(row=0, column=0, sticky="ew", padx=30, pady=(25, 8))
         mark = ctk.CTkFrame(head, fg_color=ACCENT, width=48, height=48, corner_radius=14)
         mark.pack(side="left")
         mark.pack_propagate(False)
@@ -384,93 +383,161 @@ class HadocSub:
         title_box = ctk.CTkFrame(head, fg_color="transparent")
         title_box.pack(side="left", padx=13)
         self.make_label(title_box, "HADOC SUB", TEXT, 19, "bold").pack(anchor="w")
-        self.make_label(title_box, "FIRST-TIME SETUP" if first_run else "API SETTINGS",
+        self.make_label(title_box, "API PROVIDER POOL" if not first_run else "FIRST-TIME SETUP",
                         MUTED, 10, "bold").pack(anchor="w", pady=(2, 0))
 
-        self.make_label(card, "Let's get your subtitles speaking Sinhala.", TEXT, 23, "bold",
-                        anchor="w").grid(row=1, column=0, sticky="ew", padx=36, pady=(12, 4))
+        self.make_label(card, "Use more than one AI provider.", TEXT, 23, "bold",
+                        anchor="w").grid(row=1, column=0, sticky="ew", padx=32, pady=(10, 4))
         self.make_label(
-            card, "Connect a translation provider once. Your settings will be saved securely on this PC.",
-            MUTED, 12, anchor="w", wraplength=560, justify="left"
-        ).grid(row=2, column=0, sticky="ew", padx=36, pady=(0, 23))
+            card, "Add Gemini, Groq and other compatible APIs. HADOC Sub will automatically switch when a provider hits a limit.",
+            MUTED, 12, anchor="w", wraplength=650, justify="left"
+        ).grid(row=2, column=0, sticky="ew", padx=32, pady=(0, 18))
 
         form = ctk.CTkFrame(card, fg_color="transparent")
-        form.grid(row=3, column=0, sticky="ew", padx=36)
+        form.grid(row=3, column=0, sticky="ew", padx=32)
         form.grid_columnconfigure(0, weight=1)
-        self.make_label(form, "AI PROVIDER", "#c3cede", 10, "bold").grid(row=0, column=0, sticky="w", pady=(0, 7))
+
+        self.make_label(form, "PROVIDER", "#c3cede", 10, "bold").grid(row=0, column=0, sticky="w", pady=(0, 6))
         self.provider_menu = ctk.CTkOptionMenu(
-            form, values=["Google Gemini", "Groq", "Custom"],
+            form, values=list(PROVIDERS.keys()) + ["Custom"],
             variable=self.provider, command=self.provider_changed,
-            height=43, corner_radius=9, fg_color=PANEL_2, button_color="#253951",
+            height=41, corner_radius=9, fg_color=PANEL_2, button_color="#253951",
             button_hover_color="#314966", text_color=TEXT,
             font=ctk.CTkFont(family=FONT, size=13)
         )
-        self.provider_menu.grid(row=1, column=0, sticky="ew", pady=(0, 16))
+        self.provider_menu.grid(row=1, column=0, sticky="ew", pady=(0, 11))
 
-        self.make_label(form, "API BASE URL", "#c3cede", 10, "bold").grid(row=2, column=0, sticky="w", pady=(0, 7))
-        self.make_entry(form, self.api_url, "https://...").grid(row=3, column=0, sticky="ew", pady=(0, 15), ipady=1)
+        self.make_label(form, "API BASE URL", "#c3cede", 10, "bold").grid(row=2, column=0, sticky="w", pady=(0, 5))
+        self.make_entry(form, self.api_url, "https://provider.example/v1").grid(row=3, column=0, sticky="ew", pady=(0, 10))
 
-        self.make_label(form, "MODEL NAME", "#c3cede", 10, "bold").grid(row=4, column=0, sticky="w", pady=(0, 7))
-        self.make_entry(form, self.model, "e.g. gemini-3.5-flash-lite").grid(row=5, column=0, sticky="ew", pady=(0, 15))
+        self.make_label(form, "MODEL NAME", "#c3cede", 10, "bold").grid(row=4, column=0, sticky="w", pady=(0, 5))
+        self.make_entry(form, self.model, "Model ID from your provider").grid(row=5, column=0, sticky="ew", pady=(0, 10))
 
-        self.make_label(form, "API KEY", "#c3cede", 10, "bold").grid(row=6, column=0, sticky="w", pady=(0, 7))
+        self.make_label(form, "API KEY", "#c3cede", 10, "bold").grid(row=6, column=0, sticky="w", pady=(0, 5))
         key_row = ctk.CTkFrame(form, fg_color="transparent")
         key_row.grid(row=7, column=0, sticky="ew", pady=(0, 8))
         key_row.grid_columnconfigure(0, weight=1)
-        self.setup_key_entry = self.make_entry(
-            key_row, self.api_key, "Paste your API key here", show="•"
-        )
+        self.setup_key_entry = self.make_entry(key_row, self.api_key, "Paste this provider's API key", show="•")
         self.setup_key_entry.grid(row=0, column=0, sticky="ew")
-        self.make_button(key_row, "Show", self.toggle_setup_key, height=42, width=76).grid(row=0, column=1, padx=(8, 0))
+        self.make_button(key_row, "Show", self.toggle_setup_key, height=41, width=76).grid(row=0, column=1, padx=(8, 0))
+
+        provider_actions = ctk.CTkFrame(form, fg_color="transparent")
+        provider_actions.grid(row=8, column=0, sticky="ew", pady=(0, 13))
+        provider_actions.grid_columnconfigure((0, 1), weight=1)
+        self.make_button(provider_actions, "Test API", self.test_api, height=40).grid(row=0, column=0, sticky="ew", padx=(0, 5))
+        self.make_button(provider_actions, "＋ Add to provider pool", self.add_provider, primary=True, height=40).grid(row=0, column=1, sticky="ew", padx=(5, 0))
+
+        pool_head = ctk.CTkFrame(form, fg_color="transparent")
+        pool_head.grid(row=9, column=0, sticky="ew", pady=(2, 6))
+        self.make_label(pool_head, "CONFIGURED PROVIDERS", "#c3cede", 10, "bold").pack(side="left")
+        self.pool_count_label = self.make_label(pool_head, "", GREEN, 10, "bold")
+        self.pool_count_label.pack(side="right")
+
+        self.pool_list_frame = ctk.CTkScrollableFrame(
+            form, fg_color=PANEL_3, corner_radius=10, height=118,
+            border_width=1, border_color=BORDER
+        )
+        self.pool_list_frame.grid(row=10, column=0, sticky="ew", pady=(0, 10))
+        self.render_provider_pool()
 
         self.make_label(
-            form, "Your API key is encrypted with Windows DPAPI and saved for this Windows account only.",
-            "#91aa9f", 10, anchor="w", wraplength=560, justify="left"
-        ).grid(row=8, column=0, sticky="ew", pady=(5, 12))
+            form, "API keys are encrypted with Windows DPAPI. Different services have separate quotas; multiple keys in the same provider account may share one quota.",
+            "#91aa9f", 10, anchor="w", wraplength=650, justify="left"
+        ).grid(row=11, column=0, sticky="ew", pady=(0, 9))
 
         self.setup_status_label = self.make_label(
-            form, "", YELLOW, 11, anchor="w", wraplength=560, justify="left"
+            form, self.setup_status.get(), YELLOW, 10, anchor="w", wraplength=650, justify="left"
         )
-        self.setup_status_label.grid(row=9, column=0, sticky="ew", pady=(0, 12))
+        self.setup_status_label.grid(row=12, column=0, sticky="ew", pady=(0, 9))
 
         actions = ctk.CTkFrame(form, fg_color="transparent")
-        actions.grid(row=10, column=0, sticky="ew", pady=(0, 28))
+        actions.grid(row=13, column=0, sticky="ew", pady=(0, 16))
         actions.grid_columnconfigure(0, weight=1)
-        self.make_button(
-            actions, "Test API connection", self.test_api, height=46
-        ).grid(row=0, column=0, sticky="ew", padx=(0, 8))
-        label = "Save & Start HADOC Sub  →" if first_run else "Save settings & Return  →"
-        self.make_button(
-            actions, label, self.save_and_continue, primary=True, height=46
-        ).grid(row=0, column=1, sticky="ew", padx=(8, 0))
+        label = "Save & Start HADOC Sub  →" if first_run else "Save provider pool & Return  →"
+        self.make_button(actions, label, self.save_and_continue, primary=True, height=46).grid(
+            row=0, column=0, sticky="ew"
+        )
 
         bottom = ctk.CTkFrame(canvas, fg_color="transparent")
-        bottom.place(relx=0.5, rely=0.965, anchor="center")
-        self.make_label(bottom, "HADOC • KYZER_HADOC   |   PRESS F11 FOR FULLSCREEN", "#64758d", 9, "bold").pack()
+        bottom.place(relx=0.5, rely=0.975, anchor="center")
+        self.make_label(bottom, "HADOC • KYZER_HADOC   |   F11 FULLSCREEN   |   PROVIDERS AUTO-FAILOVER",
+                        "#64758d", 9, "bold").pack()
 
     def provider_changed(self, choice):
         if choice in PROVIDERS:
             self.api_url.set(PROVIDERS[choice]["url"])
             self.model.set(PROVIDERS[choice]["model"])
+        else:
+            self.api_url.set("")
+            self.model.set("")
 
     def toggle_setup_key(self):
         self.key_visible = not self.key_visible
         self.setup_key_entry.configure(show="" if self.key_visible else "•")
 
-    def save_and_continue(self):
+    def render_provider_pool(self):
+        if not hasattr(self, "pool_list_frame"):
+            return
+        for child in self.pool_list_frame.winfo_children():
+            child.destroy()
+        self.pool_count_label.configure(text=f"{len(self.providers)} ready")
+        if not self.providers:
+            self.make_label(
+                self.pool_list_frame, "No providers added yet. Add Gemini, Groq, NVIDIA NIM or another compatible API above.",
+                MUTED, 10, anchor="w", wraplength=630
+            ).pack(fill="x", padx=10, pady=11)
+            return
+        for index, provider in enumerate(self.providers):
+            row = ctk.CTkFrame(self.pool_list_frame, fg_color=PANEL_2, corner_radius=8)
+            row.pack(fill="x", padx=5, pady=4)
+            details = ctk.CTkFrame(row, fg_color="transparent")
+            details.pack(side="left", fill="x", expand=True, padx=10, pady=7)
+            self.make_label(details, provider["name"], TEXT, 11, "bold").pack(anchor="w")
+            self.make_label(details, provider["model"], MUTED, 9).pack(anchor="w", pady=(2, 0))
+            self.make_button(
+                row, "Remove", lambda i=index: self.remove_provider(i),
+                height=30, width=76, fg_color="#3a2631", hover_color="#5a3040"
+            ).pack(side="right", padx=8)
+
+    def add_provider(self):
+        name = self.provider.get().strip()
         base = self.api_url.get().strip().rstrip("/")
         model = self.model.get().strip()
         key = self.api_key.get().strip()
         if not base.startswith("https://") and not base.startswith("http://localhost"):
             messagebox.showwarning("Invalid API URL", "Enter a valid HTTPS API base URL.")
             return
-        if not model or not key:
-            messagebox.showwarning("Missing details", "Enter both the model name and API key.")
+        if not name or not model or not key:
+            messagebox.showwarning("Missing details", "Choose a provider and enter its model name and API key.")
+            return
+        if any(p["url"] == base and p["model"] == model and p["name"] == name for p in self.providers):
+            messagebox.showinfo("Already added", "This provider and model are already in your pool.")
+            return
+        self.providers.append({"name": name, "url": base, "model": model, "key": key})
+        self.api_key.set("")
+        self.setup_status.set(f"{name} added. Add another provider or save your provider pool.")
+        self.setup_status_label.configure(text=self.setup_status.get(), text_color=GREEN)
+        self.render_provider_pool()
+
+    def remove_provider(self, index):
+        if index < 0 or index >= len(self.providers):
+            return
+        removed = self.providers.pop(index)
+        self.setup_status.set(removed["name"] + " removed from the provider pool.")
+        self.setup_status_label.configure(text=self.setup_status.get(), text_color=YELLOW)
+        self.render_provider_pool()
+
+    def save_and_continue(self):
+        # Convenience: add the current form if a key is still typed but Add was not pressed.
+        if self.api_key.get().strip():
+            self.add_provider()
+        if not self.providers:
+            messagebox.showwarning("No API providers", "Add at least one API provider before continuing.")
             return
         try:
             self.persist_settings()
         except Exception as exc:
-            messagebox.showerror("Could not save settings", str(exc))
+            messagebox.showerror("Could not save provider pool", str(exc))
             return
         self.show_main()
 
@@ -479,11 +546,11 @@ class HadocSub:
         model = self.model.get().strip()
         key = self.api_key.get().strip()
         if not base.startswith("https://") or not model or not key:
-            self.setup_status.set("Please check the HTTPS URL, model name and API key.")
+            self.setup_status.set("Enter the API URL, model and API key to test this provider.")
+            self.setup_status_label.configure(text=self.setup_status.get(), text_color=YELLOW)
             return
-        self.setup_status.set("Testing connection…")
-        if hasattr(self, "setup_status_label"):
-            self.setup_status_label.configure(text="Testing connection…", text_color=YELLOW)
+        self.setup_status.set("Testing " + self.provider.get() + " connection…")
+        self.setup_status_label.configure(text=self.setup_status.get(), text_color=YELLOW)
         threading.Thread(target=self.api_test_worker, args=(base, model, key), daemon=True).start()
 
     def api_test_worker(self, base, model, key):
