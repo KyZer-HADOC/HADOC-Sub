@@ -370,9 +370,10 @@ class HadocSub:
             if isinstance(saved, list):
                 for item in saved:
                     key = unprotect_secret(item.get("api_key_protected", ""))
-                    if key and item.get("url") and item.get("model"):
+                    name = item.get("name", "Custom")
+                    if (key or name == "MyMemory Translation") and item.get("url") and item.get("model"):
                         self.providers.append({
-                            "name": item.get("name", "Custom"),
+                            "name": name,
                             "url": item["url"].rstrip("/"),
                             "model": item["model"],
                             "key": key,
@@ -405,7 +406,7 @@ class HadocSub:
                 "name": item["name"],
                 "url": item["url"],
                 "model": item["model"],
-                "api_key_protected": protect_secret(item["key"]),
+                "api_key_protected": protect_secret(item["key"]) if item["key"] else "",
             })
         first = self.providers[0]
         data = {
@@ -510,19 +511,23 @@ class HadocSub:
         )
         self.provider_menu.grid(row=1, column=0, sticky="ew", pady=(0, 11))
 
-        self.make_label(form, "API BASE URL  •  Cloudflare: replace ACCOUNT_ID with your Account ID", "#c3cede", 10, "bold").grid(row=2, column=0, sticky="w", pady=(0, 5))
+        self.api_url_label = self.make_label(form, "API BASE URL", "#c3cede", 10, "bold")
+        self.api_url_label.grid(row=2, column=0, sticky="w", pady=(0, 5))
         self.make_entry(form, self.api_url, "https://provider.example/v1").grid(row=3, column=0, sticky="ew", pady=(0, 10))
 
-        self.make_label(form, "MODEL NAME", "#c3cede", 10, "bold").grid(row=4, column=0, sticky="w", pady=(0, 5))
+        self.model_label = self.make_label(form, "MODEL NAME", "#c3cede", 10, "bold")
+        self.model_label.grid(row=4, column=0, sticky="w", pady=(0, 5))
         self.make_entry(form, self.model, "Model ID from your provider").grid(row=5, column=0, sticky="ew", pady=(0, 10))
 
-        self.make_label(form, "API KEY", "#c3cede", 10, "bold").grid(row=6, column=0, sticky="w", pady=(0, 5))
+        self.api_key_label = self.make_label(form, "API KEY", "#c3cede", 10, "bold")
+        self.api_key_label.grid(row=6, column=0, sticky="w", pady=(0, 5))
         key_row = ctk.CTkFrame(form, fg_color="transparent")
         key_row.grid(row=7, column=0, sticky="ew", pady=(0, 8))
         key_row.grid_columnconfigure(0, weight=1)
         self.setup_key_entry = self.make_entry(key_row, self.api_key, "Paste this provider's API key", show="•")
         self.setup_key_entry.grid(row=0, column=0, sticky="ew")
         self.make_button(key_row, "Show", self.toggle_setup_key, height=41, width=76).grid(row=0, column=1, padx=(8, 0))
+        self.update_provider_field_labels(self.provider.get())
 
         provider_actions = ctk.CTkFrame(form, fg_color="transparent")
         provider_actions.grid(row=8, column=0, sticky="ew", pady=(0, 13))
@@ -567,6 +572,27 @@ class HadocSub:
         self.make_label(bottom, "HADOC • KYZER_HADOC   |   F11 FULLSCREEN   |   PROVIDERS AUTO-FAILOVER",
                         "#64758d", 9, "bold").pack()
 
+    def update_provider_field_labels(self, choice):
+        if not hasattr(self, "api_key_label"):
+            return
+        if choice == "MyMemory Translation":
+            self.api_url_label.configure(text="TRANSLATION SERVICE URL")
+            self.model_label.configure(text="LANGUAGE PAIR")
+            self.api_key_label.configure(text="EMAIL (OPTIONAL — 50,000 CHARACTERS/DAY)")
+            self.setup_key_entry.configure(
+                placeholder_text="Optional email address — leave blank for 5,000/day"
+            )
+        elif choice == "Cloudflare Workers AI":
+            self.api_url_label.configure(text="API BASE URL  •  Replace ACCOUNT_ID with your Account ID")
+            self.model_label.configure(text="MODEL NAME")
+            self.api_key_label.configure(text="API TOKEN")
+            self.setup_key_entry.configure(placeholder_text="Paste your Cloudflare Workers AI token")
+        else:
+            self.api_url_label.configure(text="API BASE URL")
+            self.model_label.configure(text="MODEL NAME")
+            self.api_key_label.configure(text="API KEY")
+            self.setup_key_entry.configure(placeholder_text="Paste this provider's API key")
+
     def provider_changed(self, choice):
         if choice in PROVIDERS:
             self.api_url.set(PROVIDERS[choice]["url"])
@@ -574,6 +600,7 @@ class HadocSub:
         else:
             self.api_url.set("")
             self.model.set("")
+        self.update_provider_field_labels(choice)
 
     def toggle_setup_key(self):
         self.key_visible = not self.key_visible
@@ -611,8 +638,11 @@ class HadocSub:
         if not base.startswith("https://") and not base.startswith("http://localhost"):
             messagebox.showwarning("Invalid API URL", "Enter a valid HTTPS API base URL.")
             return
-        if not name or not model or not key:
-            messagebox.showwarning("Missing details", "Choose a provider and enter its model name and API key.")
+        if not name or not model or (not key and name != "MyMemory Translation"):
+            messagebox.showwarning("Missing details", "Choose a provider and enter the required details. MyMemory does not require an API key.")
+            return
+        if name == "MyMemory Translation" and key and not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", key):
+            messagebox.showwarning("Invalid email", "For MyMemory, the optional field is an email address, not an API key.")
             return
         if name == "Cloudflare Workers AI" and "ACCOUNT_ID" in base.upper():
             messagebox.showwarning("Account ID required", "Replace ACCOUNT_ID in the API Base URL with your Cloudflare Account ID.")
@@ -635,8 +665,8 @@ class HadocSub:
         self.render_provider_pool()
 
     def save_and_continue(self):
-        # Convenience: add the current form if a key is still typed but Add was not pressed.
-        if self.api_key.get().strip():
+        # Convenience: add the selected no-key translation service too.
+        if self.provider.get() == "MyMemory Translation" or self.api_key.get().strip():
             self.add_provider()
         if not self.providers:
             messagebox.showwarning("No API providers", "Add at least one API provider before continuing.")
