@@ -1,12 +1,12 @@
 # HADOC Sub
 
-HADOC Sub is a Windows desktop subtitle studio for translating English SRT files into natural Sinhala.
+HADOC Sub is a Windows desktop subtitle studio for translating English SRT files into Sinhala.
 
-## Version 1.3.0
+## Version 1.4.0
 
 - Modern dark Windows desktop interface with maximized launch and F11 fullscreen.
 - First-run API setup with encrypted provider credentials.
-- Add multiple AI providers to a provider pool: Google Gemini, Groq, NVIDIA NIM, OpenRouter Free, or any compatible custom endpoint.
+- Add multiple AI providers to a provider pool: Google Gemini, Groq, NVIDIA NIM, OpenRouter Free, Cloudflare Workers AI (Meta M2M100), or any compatible custom chat-completions endpoint.
 - Automatic provider failover: if an API returns 429, an authentication error, a network failure, or an invalid response, HADOC Sub tries the next configured provider.
 - Smaller translation batches to reduce per-request token spikes.
 - Saves progress after every successful batch.
@@ -17,8 +17,8 @@ HADOC Sub is a Windows desktop subtitle studio for translating English SRT files
 ## First launch and provider setup
 
 1. Run HADOC-Sub.exe.
-2. Choose a provider preset such as Google Gemini or Groq.
-3. Enter that provider's API URL, model and API key.
+2. Choose a provider preset such as Google Gemini, Groq or Cloudflare Workers AI.
+3. Enter that provider's API URL, model and API key/token. For Cloudflare, replace `ACCOUNT_ID` in the preset URL with your Cloudflare Account ID.
 4. Click Test API, then Add to provider pool.
 5. Add other providers one at a time.
 6. Click Save & Start HADOC Sub.
@@ -48,6 +48,15 @@ OpenRouter Free:
 - Default model: openrouter/free
 - API key: https://openrouter.ai/settings/keys
 - Free model variants are currently limited to 20 requests per minute and 50 requests per day; availability and provider limits can change.
+
+Cloudflare Workers AI:
+- API URL: https://api.cloudflare.com/client/v4/accounts/ACCOUNT_ID/ai/run
+- Replace `ACCOUNT_ID` with the Account ID shown on the Cloudflare Workers AI REST API page.
+- Model: `@cf/meta/m2m100-1.2b`
+- API key: a Cloudflare Workers AI API token with Workers AI access.
+- The app requests English (`en`) to Sinhala (`si`) translation. The model supports Sinhala.
+- Subtitle entries are sent as individual requests, with up to four requests in parallel. This dedicated translation model does not follow movie-context or dialogue-style instructions like a chat LLM, so review a short sample before translating a full movie.
+- Cloudflare Workers AI Free includes a daily allocation of 10,000 Neurons. This is a quota, not unlimited usage; usage can pause when the allocation is exhausted.
 
 Custom:
 - Any provider that supports an OpenAI-compatible /chat/completions endpoint.
