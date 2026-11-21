@@ -775,6 +775,16 @@ class HadocSub:
         )
         if self.api_key.get().strip() or (name in NO_KEY_PROVIDERS and not already_added):
             self.add_provider()
+        # Always keep MyMemory available as a no-key fallback when Google is selected.
+        if name == "Google Translate (Fast)" and not any(
+            item["name"] == "MyMemory Translation" for item in self.providers
+        ):
+            self.providers.append({
+                "name": "MyMemory Translation",
+                "url": PROVIDERS["MyMemory Translation"]["url"],
+                "model": PROVIDERS["MyMemory Translation"]["model"],
+                "key": "",
+            })
         if not self.providers:
             messagebox.showwarning("No API providers", "Add at least one API provider before continuing.")
             return
