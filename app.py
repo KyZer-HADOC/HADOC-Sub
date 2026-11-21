@@ -490,7 +490,7 @@ class HadocSub:
         self.make_label(title_box, "API PROVIDER POOL" if not first_run else "FIRST-TIME SETUP",
                         MUTED, 10, "bold").pack(anchor="w", pady=(2, 0))
 
-        self.make_label(card, "Use more than one AI provider.", TEXT, 23, "bold",
+        self.make_label(card, "Choose a translation provider.", TEXT, 23, "bold",
                         anchor="w").grid(row=1, column=0, sticky="ew", padx=32, pady=(10, 4))
         self.make_label(
             card, "Use dedicated translation services such as MyMemory, or add compatible AI providers. Completed subtitle batches are saved so you can resume later.",
@@ -669,8 +669,15 @@ class HadocSub:
         self.render_provider_pool()
 
     def save_and_continue(self):
-        # Convenience: add the selected no-key translation service too.
-        if self.provider.get() == "MyMemory Translation" or self.api_key.get().strip():
+        # Add the current form only when it has not already been added.
+        name = self.provider.get().strip()
+        base = self.api_url.get().strip().rstrip("/")
+        model = self.model.get().strip()
+        already_added = any(
+            item["name"] == name and item["url"] == base and item["model"] == model
+            for item in self.providers
+        )
+        if self.api_key.get().strip() or (name == "MyMemory Translation" and not already_added):
             self.add_provider()
         if not self.providers:
             messagebox.showwarning("No API providers", "Add at least one API provider before continuing.")
