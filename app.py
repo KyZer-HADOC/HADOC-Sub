@@ -1,11 +1,13 @@
 import base64
 import ctypes
+import hashlib
 from ctypes import wintypes
 import json
 import os
 import queue
 import re
 import threading
+import time
 import urllib.error
 import urllib.request
 import webbrowser
@@ -16,15 +18,23 @@ from tkinter import filedialog, messagebox, ttk
 
 import customtkinter as ctk
 
-VERSION = "1.2.0"
+VERSION = "1.3.0"
 PROVIDERS = {
     "Google Gemini": {
         "url": "https://generativelanguage.googleapis.com/v1beta/openai",
-        "model": "gemini-3.5-flash-lite",
+        "model": "gemini-3.8-flash",
     },
     "Groq": {
         "url": "https://api.groq.com/openai/v1",
         "model": "openai/gpt-oss-120b",
+    },
+    "NVIDIA NIM": {
+        "url": "https://integrate.api.nvidia.com/v1",
+        "model": "nvidia/nemotron-3.5-super-vl-120b-a12b",
+    },
+    "OpenRouter Free": {
+        "url": "https://openrouter.ai/api/v1",
+        "model": "openrouter/free",
     },
 }
 BG = "#080d16"
@@ -70,6 +80,42 @@ def parse_srt(raw):
     if not result:
         raise ValueError("No valid SRT subtitle entries were found.")
     return result
+
+
+class ProviderFailure(RuntimeError):
+    def __init__(self, provider_name, status_code, message, retry_after=None):
+        super().__init__(message)
+        self.provider_name = provider_name
+        self.status_code = status_code
+        self.retry_after = retry_after
+
+
+def source_fingerprint(path):
+    digest = hashlib.sha256()
+    with open(path, "rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def parse_retry_seconds(headers):
+    value = headers.get("Retry-After") or headers.get("retry-after")
+    if value:
+        try:
+            return max(1, min(86400, int(float(value))))
+        except (TypeError, ValueError):
+            pass
+    for name in ("x-ratelimit-reset-tokens", "x-ratelimit-reset-requests"):
+        value = headers.get(name)
+        if not value:
+            continue
+        match = re.fullmatch(r"(?:(\d+(?:\.\d+)?)h)?(?:(\d+(?:\.\d+)?)m)?(?:(\d+(?:\.\d+)?)s)?", value.strip())
+        if match and any(match.groups()):
+            seconds = (float(match.group(1) or 0) * 3600 +
+                       float(match.group(2) or 0) * 60 +
+                       float(match.group(3) or 0))
+            return max(1, min(86400, int(seconds)))
+    return None
 
 
 def parse_json_response(value):
