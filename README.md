@@ -2,14 +2,14 @@
 
 HADOC Sub is a Windows desktop subtitle studio for translating English SRT files into Sinhala.
 
-## Version 1.5.0
+## Version 1.6.0
 
-This release adds MyMemory Translation as a no-API-key English-to-Sinhala translation provider, plus automatic provider failover and resumable SRT progress.
-Release v1.5.0 Windows build is available from the GitHub Releases page. MyMemory Translation can be used without an API key.
+This release adds batched Google Translate Web requests as the fast first-choice translator, with MyMemory as a no-API-key fallback. Repeated MyMemory subtitle lines are cached during the session.
+Release v1.6.0 Windows build is available from the GitHub Releases page.
 
 - Modern dark Windows desktop interface with maximized launch and F11 fullscreen.
 - First-run API setup with encrypted provider credentials.
-- Add translation providers to a provider pool: MyMemory Translation (no API key required), Google Gemini, Groq, NVIDIA NIM, OpenRouter Free, Cloudflare Workers AI, or any compatible custom chat-completions endpoint.
+- Add translation providers to a provider pool: Google Translate Web (batched, no API key), MyMemory Translation (no API key), Google Gemini, Groq, NVIDIA NIM, OpenRouter Free, Cloudflare Workers AI, or any compatible custom chat-completions endpoint.
 - Automatic provider failover: if an API returns 429, an authentication error, a network failure, or an invalid response, HADOC Sub tries the next configured provider.
 - Smaller translation batches to reduce per-request token spikes.
 - Saves progress after every successful batch.
@@ -20,12 +20,11 @@ Release v1.5.0 Windows build is available from the GitHub Releases page. MyMemor
 ## First launch and provider setup
 
 1. Run HADOC-Sub.exe.
-2. Choose **MyMemory Translation**.
-3. The service URL and language pair (`en-US|si-LK`) are filled in automatically. No API key is required.
-4. Optionally enter an email address in the email field to increase the documented free daily allowance from 5,000 to 50,000 characters. You may leave it blank.
-5. Click Test API, then Add to provider pool.
-6. Click Save & Start HADOC Sub.
-7. Open an English SRT and click Start translation.
+2. Choose **Google Translate (Fast)**.
+3. The endpoint and language pair (`en|si`) are filled in automatically. No API key is required.
+4. Click Test API, then Add to provider pool.
+5. Choose **MyMemory Translation** and add it as the fallback. Its API key is also optional; an email increases its daily allowance.
+6. Click Save & Start HADOC Sub, open an English SRT, and click Start translation.
 
 Settings can be changed later from API Settings. API keys and optional provider emails are encrypted with Windows DPAPI and are bound to the Windows account that saved them.
 
@@ -51,6 +50,13 @@ OpenRouter Free:
 - Default model: openrouter/free
 - API key: https://openrouter.ai/settings/keys
 - Free model variants are currently limited to 20 requests per minute and 50 requests per day; availability and provider limits can change.
+
+Google Translate (Fast):
+- Endpoint: https://translate.googleapis.com/translate_a/t
+- Language pair: `en|si`
+- API key: not required.
+- Sends several subtitle lines as repeated `q` parameters in one request, reducing round trips compared with one request per subtitle line.
+- This is an unofficial Google Translate web endpoint, not the paid/official Cloud Translation API. It has no published quota or SLA and can be rate-limited or changed by Google. HADOC Sub falls back to MyMemory when the endpoint fails.
 
 MyMemory Translation:
 - API URL: https://api.mymemory.translated.net
