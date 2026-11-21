@@ -1259,7 +1259,7 @@ class HadocSub:
     def translation_worker(self, snapshot, providers, source_path, fingerprint, all_rows, existing):
         # Smaller batches reduce per-request token spikes. Provider fallback protects the job
         # when one service returns 429, a temporary server error, or an invalid model/key.
-        batch_size = 10
+        batch_size = 20 if providers and providers[0].get("name") == "Google Translate (Fast)" else 10
         blocked_providers = set()
         translations = dict(existing)
         try:
@@ -1325,10 +1325,19 @@ class HadocSub:
         if len(url.encode("utf-8")) > 7000:
             raise RuntimeError("Google Translate request is too long; the subtitle batch must be reduced.")
 
+        # Keep a small gap between calls; bursts can trigger Google's anti-bot protection.
+        last_request = getattr(self, "google_last_request", 0.0)
+        wait = 0.15 - (time.monotonic() - last_request)
+        if wait > 0:
+            time.sleep(wait)
+        self.google_last_request = time.monotonic()
+
         request = urllib.request.Request(
             url,
             headers={
-                "Accept": "application/json",
+                "Accept": "*/*",
+                "Accept-Language": "en-US,en;q=0.9",
+                "Referer": "https://translate.google.com/",
                 "User-Agent": (
                     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                     "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -1362,43 +1371,52 @@ class HadocSub:
         # subtitle entries can be translated in one HTTP request.
         groups = []
         current = []
-        fragments = {}
+        source, target = provider.get("model", "en|si").split("|", 1)
+        line_parts = {}
+
         for index, text in batch:
-            chunks = (
-                split_mymemory_chunks(text, max_bytes=1800)
-                if len(text.encode("utf-8")) > 1800
-                else [text]
-            )
-            fragments[index] = []
-            for chunk in chunks:
-                candidate = current + [(index, chunk)]
-                pair = provider.get("model", "en|si").split("|", 1)
-                source, target = pair[0], pair[1]
-                candidate_url = build_google_translate_url(
-                    provider["url"], [entry[1] for entry in candidate], source, target
+            line_parts[index] = {}
+            source_lines = text.split("\\n")
+            for line_number, line in enumerate(source_lines):
+                if not line.strip():
+                    line_parts[index][line_number] = []
+                    continue
+                chunks = (
+                    split_mymemory_chunks(line, max_bytes=1800)
+                    if len(line.encode("utf-8")) > 1800
+                    else [line]
                 )
-                if current and len(candidate_url.encode("utf-8")) > 6500:
-                    groups.append(current)
-                    current = [(index, chunk)]
-                else:
-                    current = candidate
-                fragments[index].append(chunk)
+                line_parts[index][line_number] = []
+                for chunk in chunks:
+                    candidate = current + [(index, line_number, chunk)]
+                    candidate_url = build_google_translate_url(
+                        provider["url"], [entry[2] for entry in candidate], source, target
+                    )
+                    if current and len(candidate_url.encode("utf-8")) > 6500:
+                        groups.append(current)
+                        current = [(index, line_number, chunk)]
+                    else:
+                        current = candidate
 
         if current:
             groups.append(current)
 
-        translated_parts = {index: [] for index, _ in batch}
+        translated_parts = {index: {} for index, _ in batch}
         for group in groups:
             translated = self.request_google_translate_batch(
-                provider, [text for _, text in group]
+                provider, [text for _, _, text in group]
             )
-            for (index, _), value in zip(group, translated):
-                translated_parts[index].append(value)
+            for (index, line_number, _), value in zip(group, translated):
+                translated_parts[index].setdefault(line_number, []).append(value)
 
-        return {
-            index: " ".join(parts).strip()
-            for index, parts in translated_parts.items()
-        }
+        results = {}
+        for index, _ in batch:
+            lines = []
+            for line_number in sorted(line_parts[index]):
+                parts = translated_parts[index].get(line_number, [])
+                lines.append(" ".join(parts).strip())
+            results[index] = "\\n".join(lines)
+        return results
 
     def request_mymemory_chunk(self, provider, text):
         url = build_mymemory_url(
