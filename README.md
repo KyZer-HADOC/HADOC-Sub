@@ -5,6 +5,7 @@ HADOC Sub is a Windows desktop subtitle studio for translating English SRT files
 ## Version 1.6.0
 
 This release adds batched Google Translate Web requests as the fast first-choice translator, automatically adds MyMemory as a no-API-key fallback, and caches repeated MyMemory subtitle lines during the session.
+MyMemory is automatically added as a backup provider when Google Translate is selected.
 Release v1.6.0 Windows build is available from the GitHub Releases page.
 
 - Modern dark Windows desktop interface with maximized launch and F11 fullscreen.
