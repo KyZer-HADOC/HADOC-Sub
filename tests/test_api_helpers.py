@@ -106,10 +106,8 @@ class ApiHelperTests(unittest.TestCase):
         self.assertEqual(query["q"], ["Hello", "How are you?"])
 
     def test_google_translate_response_parses_multiple_lines(self):
-        response = [
-            ["හෙලෝ", "en"],
-            ["ඔයාට කොහොමද?", "en"],
-        ]
+        # With an explicit source language, the web endpoint returns plain strings.
+        response = ["හෙලෝ", "ඔයාට කොහොමද?"]
         self.assertEqual(
             extract_google_translate_translations(response, 2),
             ["හෙලෝ", "ඔයාට කොහොමද?"],
