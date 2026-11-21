@@ -1,12 +1,26 @@
 # HADOC Sub
 
-HADOC Sub is a Windows desktop subtitle studio for translating English SRT files into Sinhala.
+HADOC Sub is a Windows desktop subtitle studio that can generate subtitles directly from videos and translate English SRT files into Sinhala.
 
-## Version 1.6.0
+## Version 1.7.0
+
+Version 1.7.0 adds automatic video-to-subtitle generation using Groq Whisper, bundled FFmpeg audio extraction, timestamped English SRT export, and automatic Sinhala translation. Existing SRT translation, provider failover, and checkpoint/resume are preserved.
+
+### Generate Sinhala subtitles from a video
+
+1. Run HADOC-Sub.exe and configure a translation provider such as Google Translate (Fast).
+2. Open **API Settings**, select **Groq**, enter a Groq API key, add it to the provider pool, and save.
+3. Click **Open Video** and choose an MP4, MKV, AVI, MOV, M4V, WEBM, WMV or FLV file.
+4. Click **Generate Sinhala Subtitles**. HADOC Sub extracts audio with its bundled FFmpeg, transcribes it with Groq Whisper in short audio chunks, creates timestamped English captions, then starts the existing English-to-Sinhala translation automatically.
+5. The English transcript is saved beside the video as `<video>_en.srt`. After review, click **Save SRT** to export `<video>_si.srt`.
+
+Video transcription currently expects English speech. A Groq API key is required; the transcription request is subject to the current limits and pricing of your Groq account. For the free tier, HADOC Sub uses 8-minute mono 16 kHz WAV chunks designed to remain below the documented 25 MB upload limit. The app resumes translation from its saved checkpoint if interrupted. Video audio is uploaded to Groq for transcription; it is not processed entirely offline.
+
+
 
 This release adds batched Google Translate Web requests as the fast first-choice translator, automatically adds MyMemory as a no-API-key fallback, and caches repeated MyMemory subtitle lines during the session.
 MyMemory is automatically added as a backup provider when Google Translate is selected.
-Release v1.6.0 Windows build is available from the GitHub Releases page.
+Release v1.7.0 Windows build is available from the GitHub Releases page.
 
 - Modern dark Windows desktop interface with maximized launch and F11 fullscreen.
 - First-run API setup with encrypted provider credentials.
