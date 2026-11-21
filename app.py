@@ -610,7 +610,7 @@ class HadocSub:
         api_card = ctk.CTkFrame(sidebar, fg_color="#12251f", corner_radius=12, border_width=1, border_color="#254536")
         api_card.pack(fill="x", padx=14, pady=(0, 18))
         self.make_label(api_card, "●  API CONFIGURED", GREEN, 10, "bold").pack(anchor="w", padx=12, pady=(12, 4))
-        self.make_label(api_card, self.provider.get(), "#b3c8bc", 10).pack(anchor="w", padx=12, pady=(0, 12))
+        self.make_label(api_card, f"{len(self.providers)} providers ready", "#b3c8bc", 10).pack(anchor="w", padx=12, pady=(0, 12))
         self.make_label(sidebar, "HADOC SUB  v" + VERSION, "#64758d", 9, "bold").pack(anchor="w", padx=22, pady=(0, 20))
 
         content = ctk.CTkFrame(shell, fg_color=BG, corner_radius=0)
@@ -730,7 +730,7 @@ class HadocSub:
         if hasattr(self, "stat_count_label"):
             self.stat_count_label.configure(text=str(len(self.items)))
             self.stat_source_label.configure(text=self.source_path.name if self.source_path else "No file loaded")
-            self.stat_provider_label.configure(text=self.provider.get())
+            self.stat_provider_label.configure(text=f"{len(self.providers)} APIs")
 
     def build_table(self, parent):
         style = ttk.Style()
@@ -755,6 +755,80 @@ class HadocSub:
         scroll.grid(row=0, column=1, sticky="ns")
         self.table.bind("<<TreeviewSelect>>", self.select_row)
 
+    def checkpoint_file_for(self, source_path):
+        identity = os.path.normcase(os.path.abspath(str(source_path))).encode("utf-8")
+        name = hashlib.sha256(identity).hexdigest() + ".json"
+        self.progress_dir.mkdir(parents=True, exist_ok=True)
+        return self.progress_dir / name
+
+    def restore_checkpoint(self):
+        if not self.source_path:
+            return 0
+        checkpoint = self.checkpoint_file_for(self.source_path)
+        if not checkpoint.exists():
+            return 0
+        try:
+            data = json.loads(checkpoint.read_text(encoding="utf-8"))
+            if data.get("fingerprint") != self.source_fingerprint:
+                return 0
+            saved_rows = data.get("rows", [])
+            if len(saved_rows) != len(self.items):
+                return 0
+            restored = 0
+            for index, (saved, current) in enumerate(zip(saved_rows, self.items)):
+                if (saved.get("number") != current.number or
+                        saved.get("timing") != current.timing or
+                        saved.get("original") != current.original):
+                    return 0
+                value = saved.get("translated", "")
+                if isinstance(value, str) and value.strip():
+                    current.translated = value
+                    restored += 1
+            return restored
+        except (OSError, ValueError, TypeError, AttributeError):
+            return 0
+
+    def write_checkpoint(self, source_path, fingerprint, rows, translations):
+        if not source_path or not fingerprint:
+            return
+        checkpoint = self.checkpoint_file_for(source_path)
+        payload = {
+            "source_path": str(source_path),
+            "fingerprint": fingerprint,
+            "saved_at": time.time(),
+            "rows": [
+                {
+                    "number": row[0],
+                    "timing": row[1],
+                    "original": row[2],
+                    "translated": translations.get(index, ""),
+                }
+                for index, row in enumerate(rows)
+            ],
+        }
+        temp = checkpoint.with_suffix(".tmp")
+        temp.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+        temp.replace(checkpoint)
+
+    def remove_checkpoint(self):
+        if not self.source_path:
+            return
+        try:
+            checkpoint = self.checkpoint_file_for(self.source_path)
+            checkpoint.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+    def write_current_checkpoint(self):
+        if not self.source_path or not getattr(self, "source_fingerprint", None):
+            return
+        rows = [(item.number, item.timing, item.original) for item in self.items]
+        translations = {i: item.translated for i, item in enumerate(self.items) if item.translated.strip()}
+        try:
+            self.write_checkpoint(self.source_path, self.source_fingerprint, rows, translations)
+        except OSError:
+            pass
+
     def open_file(self):
         if self.busy:
             return
@@ -774,15 +848,27 @@ class HadocSub:
             messagebox.showerror("Could not open subtitle", str(exc))
             return
         self.source_path = Path(name)
+        try:
+            self.source_fingerprint = source_fingerprint(self.source_path)
+        except OSError as exc:
+            messagebox.showerror("Could not read subtitle", str(exc))
+            return
+        restored = self.restore_checkpoint()
         self.file_text.set(self.source_path.name + "  •  " + f"{len(self.items):,} subtitles")
         self.file_name_label.configure(text=self.file_text.get())
         self.count_text.set(str(len(self.items)))
-        self.translated_text.set("0")
         self.selected = None
         self.clear_editor()
         self.refresh_table()
         self.update_stats_cards()
-        self.set_status(f"Loaded {len(self.items):,} subtitle entries", "success")
+        self.update_translation_progress()
+        if restored:
+            self.set_status(
+                f"Restored {restored:,}/{len(self.items):,} saved translations. Click Start translation to resume.",
+                "success"
+            )
+        else:
+            self.set_status(f"Loaded {len(self.items):,} subtitle entries", "success")
 
     def refresh_table(self):
         if not hasattr(self, "table"):
@@ -827,6 +913,7 @@ class HadocSub:
             self.table.selection_set(str(self.selected))
             self.table.see(str(self.selected))
         self.update_translation_progress()
+        self.write_current_checkpoint()
         self.set_status(f"Subtitle #{self.items[self.selected].number} updated", "success")
 
     def update_translation_progress(self):
