@@ -223,6 +223,8 @@ class HadocSub:
         self.fullscreen = False
         self.on_setup_screen = False
         self.settings_path = Path(os.environ.get("APPDATA", str(Path.home()))) / "HADOC-Sub" / "settings.json"
+        self.progress_dir = self.settings_path.parent / "progress"
+        self.providers = []
 
         self.provider = tk.StringVar(value="Google Gemini")
         self.api_url = tk.StringVar(value=PROVIDERS["Google Gemini"]["url"])
@@ -241,7 +243,7 @@ class HadocSub:
         self.load_settings()
 
         self.root.after(120, self.poll_events)
-        if self.settings.get("api_key"):
+        if self.providers:
             self.show_main()
         else:
             self.show_setup(first_run=True)
@@ -262,24 +264,56 @@ class HadocSub:
     def load_settings(self):
         try:
             data = json.loads(self.settings_path.read_text(encoding="utf-8"))
-            self.provider.set(data.get("provider", "Google Gemini"))
-            self.api_url.set(data.get("api_url", PROVIDERS["Google Gemini"]["url"]))
-            self.model.set(data.get("model", PROVIDERS["Google Gemini"]["model"]))
-            self.api_key.set(unprotect_secret(data.get("api_key_protected", "")))
             self.settings = data
+            saved = data.get("providers")
+            if isinstance(saved, list):
+                for item in saved:
+                    key = unprotect_secret(item.get("api_key_protected", ""))
+                    if key and item.get("url") and item.get("model"):
+                        self.providers.append({
+                            "name": item.get("name", "Custom"),
+                            "url": item["url"].rstrip("/"),
+                            "model": item["model"],
+                            "key": key,
+                        })
+            else:
+                # Migrate settings from HADOC Sub v1.0–v1.2.
+                key = unprotect_secret(data.get("api_key_protected", ""))
+                if key:
+                    self.providers.append({
+                        "name": data.get("provider", "Google Gemini"),
+                        "url": data.get("api_url", PROVIDERS["Google Gemini"]["url"]).rstrip("/"),
+                        "model": data.get("model", PROVIDERS["Google Gemini"]["model"]),
+                        "key": key,
+                    })
+            if self.providers:
+                first = self.providers[0]
+                self.provider.set(first["name"])
+                self.api_url.set(first["url"])
+                self.model.set(first["model"])
         except (OSError, ValueError, TypeError):
             self.settings = {}
+            self.providers = []
 
     def persist_settings(self):
-        key = self.api_key.get().strip()
-        if not key:
-            raise ValueError("Please enter your API key.")
-        encrypted = protect_secret(key)
+        if not self.providers:
+            raise ValueError("Add at least one API provider before saving.")
+        saved = []
+        for item in self.providers:
+            saved.append({
+                "name": item["name"],
+                "url": item["url"],
+                "model": item["model"],
+                "api_key_protected": protect_secret(item["key"]),
+            })
+        first = self.providers[0]
         data = {
-            "provider": self.provider.get(),
-            "api_url": self.api_url.get().strip().rstrip("/"),
-            "model": self.model.get().strip(),
-            "api_key_protected": encrypted,
+            "providers": saved,
+            # Retain encrypted legacy fields so older versions can still read a default provider.
+            "provider": first["name"],
+            "api_url": first["url"],
+            "model": first["model"],
+            "api_key_protected": saved[0]["api_key_protected"],
             "version": VERSION,
         }
         self.settings_path.parent.mkdir(parents=True, exist_ok=True)
