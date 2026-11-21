@@ -1,5 +1,5 @@
 name: Build HADOC Sub for Windows
-# Version 1.2.0 — modern fullscreen desktop studio
+# Version 1.2.0 — visible actions and expanded subtitle table
 
 on:
   push:
