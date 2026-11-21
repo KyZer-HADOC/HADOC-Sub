@@ -329,10 +329,12 @@ class HadocSub:
         )
 
     def make_button(self, parent, text, command, primary=False, height=42, **kwargs):
+        button_color = kwargs.pop("fg_color", ACCENT if primary else PANEL_2)
+        hover_color = kwargs.pop("hover_color", ACCENT_HOVER if primary else "#20324a")
         return ctk.CTkButton(
             parent, text=text, command=command, height=height, corner_radius=10,
-            fg_color=ACCENT if primary else PANEL_2,
-            hover_color=ACCENT_HOVER if primary else "#20324a",
+            fg_color=button_color,
+            hover_color=hover_color,
             text_color="#ffffff", font=ctk.CTkFont(family=FONT, size=13, weight="bold"),
             border_width=0, **kwargs
         )
