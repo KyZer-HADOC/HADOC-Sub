@@ -820,9 +820,14 @@ class HadocSub:
     def api_test_worker(self, base, model, key, provider_name):
         if provider_name == "Google Translate (Fast)":
             try:
+                original = "Hello, how are you?"
                 translated = self.request_google_translate_batch(
-                    {"url": base, "model": model}, ["Hello, how are you?"]
+                    {"url": base, "model": model}, [original]
                 )[0]
+                if translated.strip().casefold() == original.casefold():
+                    raise RuntimeError(
+                        "The endpoint returned the original English text. Check that the target language is Sinhala (si)."
+                    )
                 self.events.put(("api_test_ok", "Google Translate connected. Test translation: " + translated))
             except Exception as exc:
                 self.events.put(("api_test_error", "Google Translate test failed: " + str(exc)))
