@@ -5,7 +5,7 @@ HADOC Sub is a Windows desktop subtitle studio for translating English SRT files
 ## Version 1.5.0
 
 This release adds MyMemory Translation as a no-API-key English-to-Sinhala translation provider, plus automatic provider failover and resumable SRT progress.
-Release v1.5.0 Windows build is available from the GitHub Releases page.
+Release v1.5.0 Windows build is available from the GitHub Releases page. MyMemory Translation can be used without an API key.
 
 - Modern dark Windows desktop interface with maximized launch and F11 fullscreen.
 - First-run API setup with encrypted provider credentials.
