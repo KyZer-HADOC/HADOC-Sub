@@ -1376,7 +1376,7 @@ class HadocSub:
 
         for index, text in batch:
             line_parts[index] = {}
-            source_lines = text.split("\\n")
+            source_lines = text.split("\n")
             for line_number, line in enumerate(source_lines):
                 if not line.strip():
                     line_parts[index][line_number] = []
@@ -1415,7 +1415,7 @@ class HadocSub:
             for line_number in sorted(line_parts[index]):
                 parts = translated_parts[index].get(line_number, [])
                 lines.append(" ".join(parts).strip())
-            results[index] = "\\n".join(lines)
+            results[index] = "\n".join(lines)
         return results
 
     def request_mymemory_chunk(self, provider, text):
