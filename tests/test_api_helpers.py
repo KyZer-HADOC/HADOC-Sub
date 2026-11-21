@@ -1,6 +1,11 @@
 import unittest
 
-from app import parse_json_response, parse_retry_seconds
+from app import (
+    cloudflare_model_endpoint,
+    extract_cloudflare_translation,
+    parse_json_response,
+    parse_retry_seconds,
+)
 
 
 class ApiHelperTests(unittest.TestCase):
@@ -19,6 +24,26 @@ class ApiHelperTests(unittest.TestCase):
     def test_parse_json_response(self):
         result = parse_json_response('{"translations":[{"index":1,"text":"හෙලෝ"}]}')
         self.assertEqual(result["translations"][0]["text"], "හෙලෝ")
+
+    def test_cloudflare_translation_response(self):
+        response = {
+            "success": True,
+            "result": {"translated_text": "ඔයාට කොහොමද?"},
+        }
+        self.assertEqual(extract_cloudflare_translation(response), "ඔයාට කොහොමද?")
+
+    def test_cloudflare_translation_rejects_missing_text(self):
+        with self.assertRaises(ValueError):
+            extract_cloudflare_translation({"success": True, "result": {}})
+
+    def test_cloudflare_endpoint(self):
+        self.assertEqual(
+            cloudflare_model_endpoint(
+                "https://api.cloudflare.com/client/v4/accounts/abc/ai/run/",
+                "@cf/meta/m2m100-1.2b",
+            ),
+            "https://api.cloudflare.com/client/v4/accounts/abc/ai/run/@cf/meta/m2m100-1.2b",
+        )
 
 
 if __name__ == "__main__":
