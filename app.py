@@ -1314,6 +1314,92 @@ class HadocSub:
               "then click Start translation again to resume only the remaining lines."
         )
 
+    def request_google_translate_batch(self, provider, texts):
+        language_pair = provider.get("model", "en|si")
+        try:
+            source, target = language_pair.split("|", 1)
+        except ValueError as exc:
+            raise RuntimeError("Google Translate language pair must use source|target format.") from exc
+
+        url = build_google_translate_url(provider["url"], texts, source, target)
+        if len(url.encode("utf-8")) > 7000:
+            raise RuntimeError("Google Translate request is too long; the subtitle batch must be reduced.")
+
+        request = urllib.request.Request(
+            url,
+            headers={
+                "Accept": "application/json",
+                "User-Agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/157.0.0.0 Safari/537.36"
+                ),
+            },
+            method="GET",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=45) as response:
+                data = json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace")[:500]
+            if exc.code == 429:
+                raise RuntimeError("Google Translate web endpoint rate-limited this request. " + detail) from exc
+            if exc.code in (401, 403):
+                raise RuntimeError("Google Translate web endpoint blocked this request. " + detail) from exc
+            raise RuntimeError(f"Google Translate returned HTTP {exc.code}: {detail}") from exc
+        except (urllib.error.URLError, TimeoutError) as exc:
+            raise RuntimeError("Google Translate network or timeout error: " + str(exc)) from exc
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+            raise RuntimeError("Google Translate returned invalid JSON: " + str(exc)) from exc
+
+        try:
+            return extract_google_translate_translations(data, len(texts))
+        except Exception as exc:
+            raise RuntimeError("Could not read Google Translate response: " + str(exc)) from exc
+
+    def translate_google_batch(self, batch, provider):
+        # Google Translate's web endpoint accepts repeated q parameters, so several
+        # subtitle entries can be translated in one HTTP request.
+        groups = []
+        current = []
+        fragments = {}
+        for index, text in batch:
+            chunks = (
+                split_mymemory_chunks(text, max_bytes=1800)
+                if len(text.encode("utf-8")) > 1800
+                else [text]
+            )
+            fragments[index] = []
+            for chunk in chunks:
+                candidate = current + [(index, chunk)]
+                pair = provider.get("model", "en|si").split("|", 1)
+                source, target = pair[0], pair[1]
+                candidate_url = build_google_translate_url(
+                    provider["url"], [entry[1] for entry in candidate], source, target
+                )
+                if current and len(candidate_url.encode("utf-8")) > 6500:
+                    groups.append(current)
+                    current = [(index, chunk)]
+                else:
+                    current = candidate
+                fragments[index].append(chunk)
+
+        if current:
+            groups.append(current)
+
+        translated_parts = {index: [] for index, _ in batch}
+        for group in groups:
+            translated = self.request_google_translate_batch(
+                provider, [text for _, text in group]
+            )
+            for (index, _), value in zip(group, translated):
+                translated_parts[index].append(value)
+
+        return {
+            index: " ".join(parts).strip()
+            for index, parts in translated_parts.items()
+        }
+
     def request_mymemory_chunk(self, provider, text):
         url = build_mymemory_url(
             provider["url"], text, provider.get("key", ""), provider.get("model", "en-US|si-LK")
@@ -1359,10 +1445,30 @@ class HadocSub:
         return index, self.request_mymemory_translation(provider, text)
 
     def translate_mymemory_batch(self, batch, provider):
-        with ThreadPoolExecutor(max_workers=min(3, len(batch))) as executor:
-            return dict(executor.map(
-                lambda item: self._translate_mymemory_item(item, provider), batch
-            ))
+        # Repeated movie subtitles are translated once per app session and reused.
+        pending = {}
+        results = {}
+        for index, text in batch:
+            with self.mymemory_cache_lock:
+                cached = self.mymemory_cache.get(text)
+            if cached:
+                results[index] = cached
+            else:
+                pending.setdefault(text, []).append(index)
+
+        if pending:
+            unique_texts = list(pending)
+            with ThreadPoolExecutor(max_workers=min(4, len(unique_texts))) as executor:
+                translated_rows = executor.map(
+                    lambda text: self.request_mymemory_translation(provider, text),
+                    unique_texts,
+                )
+                for text, translated in zip(unique_texts, translated_rows):
+                    with self.mymemory_cache_lock:
+                        self.mymemory_cache[text] = translated
+                    for index in pending[text]:
+                        results[index] = translated
+        return results
 
     def request_cloudflare_translation(self, provider, text):
         body = json.dumps({
@@ -1415,6 +1521,8 @@ class HadocSub:
         return dict(pairs)
 
     def translate_batch(self, batch, provider):
+        if provider.get("name") == "Google Translate (Fast)":
+            return self.translate_google_batch(batch, provider)
         if provider.get("name") == "MyMemory Translation":
             return self.translate_mymemory_batch(batch, provider)
         if provider.get("name") == "Cloudflare Workers AI":
