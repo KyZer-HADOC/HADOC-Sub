@@ -16,7 +16,7 @@ from tkinter import filedialog, messagebox, ttk
 
 import customtkinter as ctk
 
-VERSION = "1.1.0"
+VERSION = "1.2.0"
 PROVIDERS = {
     "Google Gemini": {
         "url": "https://generativelanguage.googleapis.com/v1beta/openai",
@@ -469,28 +469,19 @@ class HadocSub:
         content = ctk.CTkFrame(shell, fg_color=BG, corner_radius=0)
         content.grid(row=0, column=1, sticky="nsew", padx=32, pady=25)
         content.grid_columnconfigure(0, weight=1)
-        content.grid_rowconfigure(2, weight=1)
+        content.grid_rowconfigure(1, weight=1)
 
         top = ctk.CTkFrame(content, fg_color="transparent")
-        top.grid(row=0, column=0, sticky="ew", pady=(0, 23))
+        top.grid(row=0, column=0, sticky="ew", pady=(0, 14))
         top.grid_columnconfigure(0, weight=1)
         title_area = ctk.CTkFrame(top, fg_color="transparent")
         title_area.grid(row=0, column=0, sticky="w")
         self.make_label(title_area, "Subtitle Studio", TEXT, 27, "bold").pack(anchor="w")
         self.make_label(title_area, "Translate, review and export your movie subtitles.", MUTED, 12).pack(anchor="w", pady=(4, 0))
-        self.make_button(top, "⚙  Settings", lambda: self.show_setup(first_run=False), height=39, width=125).grid(row=0, column=1, sticky="e")
-
-        # Overview cards
-        overview = ctk.CTkFrame(content, fg_color="transparent")
-        overview.grid(row=1, column=0, sticky="ew", pady=(0, 18))
-        for i in range(3):
-            overview.grid_columnconfigure(i, weight=1)
-        self.stat_card(overview, 0, "SOURCE FILE", "English SRT", "Choose a subtitle file")
-        self.stat_card(overview, 1, "SUBTITLE LINES", self.count_text.get(), "Loaded entries")
-        self.stat_card(overview, 2, "TRANSLATION", self.provider.get(), "Active AI provider")
+        self.make_button(top, "⚙  Settings", self.open_settings, height=39, width=125).grid(row=0, column=1, sticky="e")
 
         body = ctk.CTkFrame(content, fg_color="transparent")
-        body.grid(row=2, column=0, sticky="nsew")
+        body.grid(row=1, column=0, sticky="nsew")
         body.grid_columnconfigure(0, weight=0, minsize=315)
         body.grid_columnconfigure(1, weight=1)
         body.grid_rowconfigure(0, weight=1)
@@ -511,15 +502,10 @@ class HadocSub:
         self.make_label(file_card, "SELECTED FILE", "#8fa1b8", 9, "bold").grid(row=3, column=0, sticky="w", padx=20, pady=(3, 5))
         self.file_name_label = self.make_label(file_card, self.file_text.get(), TEXT, 11, anchor="w", wraplength=270, justify="left")
         self.file_name_label.grid(row=4, column=0, sticky="ew", padx=20)
-        self.make_button(file_card, "Open another file", self.open_file, height=38).grid(row=5, column=0, sticky="ew", padx=17, pady=(17, 8))
-        self.start_button = self.make_button(file_card, "▶   Start translation", self.start_translation, primary=True, height=48)
-        self.start_button.grid(row=6, column=0, sticky="ew", padx=17, pady=(0, 9))
-        self.make_button(file_card, "↓   Save Sinhala SRT", self.save_file, height=42).grid(row=7, column=0, sticky="ew", padx=17, pady=(0, 18))
-
         work_card = ctk.CTkFrame(body, fg_color=PANEL, corner_radius=16, border_width=1, border_color=BORDER)
         work_card.grid(row=0, column=1, sticky="nsew")
         work_card.grid_columnconfigure(0, weight=1)
-        work_card.grid_rowconfigure(2, weight=1)
+        work_card.grid_rowconfigure(2, weight=1, minsize=190)
         work_head = ctk.CTkFrame(work_card, fg_color="transparent")
         work_head.grid(row=0, column=0, sticky="ew", padx=19, pady=(18, 12))
         self.make_label(work_head, "02  TRANSLATION WORKSPACE", TEXT, 12, "bold").pack(anchor="w")
@@ -527,8 +513,12 @@ class HadocSub:
 
         toolbar = ctk.CTkFrame(work_card, fg_color="transparent")
         toolbar.grid(row=1, column=0, sticky="ew", padx=17, pady=(0, 9))
-        self.make_label(toolbar, "SUBTITLE ENTRIES", "#91a4bd", 9, "bold").pack(side="left", padx=(0, 10))
-        self.search_entry = self.make_entry(toolbar, self.search_text, "Search subtitles…", height=35)
+        self.make_label(toolbar, "SUBTITLES", "#91a4bd", 9, "bold").pack(side="left", padx=(0, 9))
+        self.make_button(toolbar, "＋ Open SRT", self.open_file, height=35, width=105).pack(side="left", padx=(0, 6))
+        self.start_button = self.make_button(toolbar, "▶  Start translation", self.start_translation, primary=True, height=35, width=150)
+        self.start_button.pack(side="left", padx=(0, 6))
+        self.make_button(toolbar, "↓  Save SRT", self.save_file, height=35, width=112).pack(side="left", padx=(0, 8))
+        self.search_entry = self.make_entry(toolbar, self.search_text, "Search…", height=35)
         self.search_entry.pack(side="right", fill="x", expand=True)
 
         table_wrap = ctk.CTkFrame(work_card, fg_color=PANEL_3, corner_radius=10)
@@ -548,19 +538,19 @@ class HadocSub:
         self.selected_label.pack(side="right")
         self.make_label(editor, "ENGLISH", MUTED, 9, "bold").grid(row=1, column=0, sticky="w", padx=13, pady=(0, 5))
         self.make_label(editor, "SINHALA · EDITABLE", MUTED, 9, "bold").grid(row=1, column=1, sticky="w", padx=13, pady=(0, 5))
-        self.original_box = ctk.CTkTextbox(editor, height=67, corner_radius=8, fg_color="#111b29",
+        self.original_box = ctk.CTkTextbox(editor, height=52, corner_radius=8, fg_color="#111b29",
                                            text_color="#b8c5d7", border_width=1, border_color=BORDER,
                                            font=ctk.CTkFont(family=FONT, size=11), wrap="word")
         self.original_box.grid(row=2, column=0, sticky="ew", padx=(13, 6), pady=(0, 10))
         self.original_box.configure(state="disabled")
-        self.translated_box = ctk.CTkTextbox(editor, height=67, corner_radius=8, fg_color="#111b29",
+        self.translated_box = ctk.CTkTextbox(editor, height=52, corner_radius=8, fg_color="#111b29",
                                              text_color=TEXT, border_width=1, border_color=BORDER,
                                              font=ctk.CTkFont(family="Nirmala UI", size=12), wrap="word")
         self.translated_box.grid(row=2, column=1, sticky="ew", padx=(6, 13), pady=(0, 10))
         self.make_button(editor, "Apply edit", self.apply_edit, height=34, width=108).grid(row=3, column=1, sticky="e", padx=13, pady=(0, 10))
 
         progress_area = ctk.CTkFrame(content, fg_color="transparent")
-        progress_area.grid(row=3, column=0, sticky="ew", pady=(12, 0))
+        progress_area.grid(row=2, column=0, sticky="ew", pady=(9, 0))
         progress_area.grid_columnconfigure(0, weight=1)
         self.status_label = self.make_label(progress_area, self.status_text.get(), MUTED, 10)
         self.status_label.grid(row=0, column=0, sticky="w")
@@ -604,7 +594,7 @@ class HadocSub:
                         relief="flat", borderwidth=0, font=("Segoe UI", 8, "bold"), padding=8)
         style.map("Hadoc.Treeview", background=[("selected", "#5b3042")], foreground=[("selected", "#ffffff")])
         self.table = ttk.Treeview(parent, columns=("n", "time", "english", "sinhala"),
-                                  show="headings", style="Hadoc.Treeview", selectmode="browse")
+                                  show="headings", style="Hadoc.Treeview", selectmode="browse", height=9)
         for col, heading in zip(("n", "time", "english", "sinhala"),
                                 ("#", "TIMESTAMP", "ENGLISH", "SINHALA")):
             self.table.heading(col, text=heading)
@@ -612,7 +602,7 @@ class HadocSub:
         self.table.column("time", width=150, minwidth=135, stretch=False)
         self.table.column("english", width=240, minwidth=100, stretch=True)
         self.table.column("sinhala", width=240, minwidth=100, stretch=True)
-        scroll = ttk.Scrollbar(parent, orient="vertical", command=self.table.yview)
+        scroll = ctk.CTkScrollbar(parent, orientation="vertical", command=self.table.yview, fg_color="transparent", button_color="#31435c", button_hover_color="#506681")
         self.table.configure(yscrollcommand=scroll.set)
         self.table.grid(row=0, column=0, sticky="nsew")
         scroll.grid(row=0, column=1, sticky="ns")
