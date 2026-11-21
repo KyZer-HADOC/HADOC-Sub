@@ -10,6 +10,7 @@ import re
 import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 import webbrowser
 from dataclasses import dataclass
@@ -19,7 +20,7 @@ from tkinter import filedialog, messagebox, ttk
 
 import customtkinter as ctk
 
-VERSION = "1.4.0"
+VERSION = "1.5.0"
 PROVIDERS = {
     "Google Gemini": {
         "url": "https://generativelanguage.googleapis.com/v1beta/openai",
@@ -40,6 +41,10 @@ PROVIDERS = {
     "Cloudflare Workers AI": {
         "url": "https://api.cloudflare.com/client/v4/accounts/ACCOUNT_ID/ai/run",
         "model": "@cf/meta/m2m100-1.2b",
+    },
+    "MyMemory Translation": {
+        "url": "https://api.mymemory.translated.net",
+        "model": "en|si",
     },
 }
 BG = "#080d16"
@@ -171,6 +176,63 @@ def extract_cloudflare_translation(data):
 
 def cloudflare_model_endpoint(base_url, model):
     return base_url.rstrip("/") + "/" + model.lstrip("/")
+
+
+def build_mymemory_url(base_url, text, email=""):
+    params = {"q": text, "langpair": "en|si", "mt": "1"}
+    if email:
+        params["de"] = email
+    return base_url.rstrip("/") + "/get?" + urllib.parse.urlencode(params)
+
+
+def extract_mymemory_translation(data):
+    if not isinstance(data, dict):
+        raise ValueError("MyMemory returned an unexpected response.")
+    try:
+        status = int(data.get("responseStatus", 0))
+    except (TypeError, ValueError):
+        status = 0
+    if status != 200:
+        detail = data.get("responseDetails") or "MyMemory could not translate this subtitle."
+        if data.get("quotaFinished"):
+            detail = "MyMemory daily free quota has been reached. " + str(detail)
+        raise ValueError(str(detail))
+    response = data.get("responseData") or {}
+    translated = response.get("translatedText") if isinstance(response, dict) else None
+    if not isinstance(translated, str) or not translated.strip():
+        raise ValueError(data.get("responseDetails") or "MyMemory returned an empty translation.")
+    return translated.strip()
+
+
+def split_mymemory_chunks(text, max_bytes=450):
+    """Split oversized subtitle text into UTF-8-safe chunks under MyMemory's 500-byte limit."""
+    chunks = []
+    current = ""
+    for word in text.split():
+        if len(word.encode("utf-8")) > max_bytes:
+            if current:
+                chunks.append(current)
+                current = ""
+            piece = ""
+            for char in word:
+                if len((piece + char).encode("utf-8")) > max_bytes:
+                    if piece:
+                        chunks.append(piece)
+                    piece = char
+                else:
+                    piece += char
+            if piece:
+                current = piece
+            continue
+        candidate = (current + " " + word).strip()
+        if len(candidate.encode("utf-8")) > max_bytes and current:
+            chunks.append(current)
+            current = word
+        else:
+            current = candidate
+    if current:
+        chunks.append(current)
+    return chunks or [""]
 
 
 def _dpapi_blob(data):
