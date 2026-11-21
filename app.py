@@ -647,7 +647,23 @@ class HadocSub:
         if name == "Cloudflare Workers AI" and "ACCOUNT_ID" in base.upper():
             messagebox.showwarning("Account ID required", "Replace ACCOUNT_ID in the API Base URL with your Cloudflare Account ID.")
             return
-        if any(p["url"] == base and p["model"] == model and p["name"] == name for p in self.providers):
+        existing = next(
+            (
+                item for item in self.providers
+                if item["url"] == base and item["model"] == model and item["name"] == name
+            ),
+            None,
+        )
+        if existing:
+            if name == "MyMemory Translation" and key:
+                existing["key"] = key
+                self.providers.remove(existing)
+                self.providers.insert(0, existing)
+                self.api_key.set("")
+                self.setup_status.set("MyMemory email updated. Its higher daily allowance will be used.")
+                self.setup_status_label.configure(text=self.setup_status.get(), text_color=GREEN)
+                self.render_provider_pool()
+                return
             messagebox.showinfo("Already added", "This provider and model are already in your pool.")
             return
         provider_entry = {"name": name, "url": base, "model": model, "key": key}
