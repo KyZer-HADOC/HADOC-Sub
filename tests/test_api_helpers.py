@@ -136,23 +136,23 @@ class ApiHelperTests(unittest.TestCase):
             {"start": 1.25, "end": 2.75, "text": "Hello there."},
             {"start": 4, "end": 5.5, "text": "How are you?"},
         ])
-        self.assertIn("1\\n00:00:01,250 --> 00:00:02,750\\nHello there.", srt)
-        self.assertIn("2\\n00:00:04,000 --> 00:00:05,500\\nHow are you?", srt)
+        self.assertIn("1\n00:00:01,250 --> 00:00:02,750\nHello there.", srt)
+        self.assertIn("2\n00:00:04,000 --> 00:00:05,500\nHow are you?", srt)
 
     def test_transcription_segments_add_chunk_offset_and_sort(self):
         srt = transcription_segments_to_srt([
             {"start": 2, "end": 3, "text": "Second"},
             {"start": 0, "end": 1, "text": "First"},
         ], offset_seconds=480)
-        self.assertTrue(srt.startswith("1\\n00:08:00,000 --> 00:08:01,000\\nFirst"))
-        self.assertIn("2\\n00:08:02,000 --> 00:08:03,000\\nSecond", srt)
+        self.assertTrue(srt.startswith("1\n00:08:00,000 --> 00:08:01,000\nFirst"))
+        self.assertIn("2\n00:08:02,000 --> 00:08:03,000\nSecond", srt)
 
     def test_transcription_segments_skip_invalid_rows(self):
         self.assertEqual(transcription_segments_to_srt([
             {"start": "bad", "end": 3, "text": "Skip"},
             {"start": 1, "end": 2, "text": "Keep"},
             {"start": 2, "end": 3, "text": ""},
-        ]), "1\\n00:00:01,000 --> 00:00:02,000\\nKeep\\n")
+        ]), "1\n00:00:01,000 --> 00:00:02,000\nKeep\n")
 
 if __name__ == "__main__":
     unittest.main()
