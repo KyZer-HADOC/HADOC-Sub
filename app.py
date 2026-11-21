@@ -493,7 +493,7 @@ class HadocSub:
         self.make_label(card, "Use more than one AI provider.", TEXT, 23, "bold",
                         anchor="w").grid(row=1, column=0, sticky="ew", padx=32, pady=(10, 4))
         self.make_label(
-            card, "Add Gemini, Groq, Cloudflare Workers AI and other compatible APIs. HADOC Sub automatically switches when a provider hits a limit.",
+            card, "Use dedicated translation services such as MyMemory, or add compatible AI providers. Completed subtitle batches are saved so you can resume later.",
             MUTED, 12, anchor="w", wraplength=650, justify="left"
         ).grid(row=2, column=0, sticky="ew", padx=32, pady=(0, 18))
 
@@ -550,7 +550,7 @@ class HadocSub:
         self.render_provider_pool()
 
         self.make_label(
-            form, "API keys are encrypted with Windows DPAPI. Different services have separate quotas; multiple keys in the same provider account may share one quota.",
+            form, "API keys are encrypted with Windows DPAPI. MyMemory does not require an API key; an optional email increases its documented daily allowance.",
             "#91aa9f", 10, anchor="w", wraplength=650, justify="left"
         ).grid(row=11, column=0, sticky="ew", pady=(0, 9))
 
@@ -683,8 +683,13 @@ class HadocSub:
         model = self.model.get().strip()
         key = self.api_key.get().strip()
         provider_name = self.provider.get().strip()
-        if not base.startswith("https://") or not model or not key:
-            self.setup_status.set("Enter the API URL, model and API key to test this provider.")
+        needs_key = provider_name != "MyMemory Translation"
+        if not base.startswith("https://") or not model or (needs_key and not key):
+            self.setup_status.set("Enter the service URL and required details. MyMemory needs no API key.")
+            self.setup_status_label.configure(text=self.setup_status.get(), text_color=YELLOW)
+            return
+        if provider_name == "MyMemory Translation" and key and not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", key):
+            self.setup_status.set("Enter a valid email address or leave it blank.")
             self.setup_status_label.configure(text=self.setup_status.get(), text_color=YELLOW)
             return
         if provider_name == "Cloudflare Workers AI" and "ACCOUNT_ID" in base.upper():
@@ -696,6 +701,14 @@ class HadocSub:
         threading.Thread(target=self.api_test_worker, args=(base, model, key, provider_name), daemon=True).start()
 
     def api_test_worker(self, base, model, key, provider_name):
+        if provider_name == "MyMemory Translation":
+            try:
+                translated = self.request_mymemory_translation({"url": base, "key": key}, "Hello, how are you?")
+                self.events.put(("api_test_ok", "MyMemory connected. Test translation: " + translated))
+            except Exception as exc:
+                self.events.put(("api_test_error", "MyMemory test failed: " + str(exc)))
+            return
+
         if provider_name == "Cloudflare Workers AI":
             provider = {"url": base, "model": model, "key": key}
             try:
@@ -1184,6 +1197,54 @@ class HadocSub:
               "then click Start translation again to resume only the remaining lines."
         )
 
+    def request_mymemory_chunk(self, provider, text):
+        url = build_mymemory_url(provider["url"], text, provider.get("key", ""))
+        request = urllib.request.Request(
+            url,
+            headers={
+                "Accept": "application/json",
+                "User-Agent": "HADOC-Sub/" + VERSION,
+            },
+            method="GET",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=45) as response:
+                data = json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace")[:500]
+            if exc.code == 429:
+                raise RuntimeError("MyMemory rate limit reached. " + detail) from exc
+            raise RuntimeError(f"MyMemory returned HTTP {exc.code}: {detail}") from exc
+        except (urllib.error.URLError, TimeoutError) as exc:
+            raise RuntimeError("MyMemory network or timeout error: " + str(exc)) from exc
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+            raise RuntimeError("MyMemory returned invalid JSON: " + str(exc)) from exc
+        return extract_mymemory_translation(data)
+
+    def request_mymemory_translation(self, provider, text):
+        if len(text.encode("utf-8")) <= 450:
+            return self.request_mymemory_chunk(provider, text)
+
+        translated_lines = []
+        for line in text.splitlines():
+            if not line.strip():
+                translated_lines.append("")
+                continue
+            chunks = split_mymemory_chunks(line)
+            translations = [self.request_mymemory_chunk(provider, chunk) for chunk in chunks]
+            translated_lines.append(" ".join(translations))
+        return "\n".join(translated_lines)
+
+    def _translate_mymemory_item(self, item, provider):
+        index, text = item
+        return index, self.request_mymemory_translation(provider, text)
+
+    def translate_mymemory_batch(self, batch, provider):
+        with ThreadPoolExecutor(max_workers=min(3, len(batch))) as executor:
+            return dict(executor.map(
+                lambda item: self._translate_mymemory_item(item, provider), batch
+            ))
+
     def request_cloudflare_translation(self, provider, text):
         body = json.dumps({
             "text": text,
@@ -1235,6 +1296,8 @@ class HadocSub:
         return dict(pairs)
 
     def translate_batch(self, batch, provider):
+        if provider.get("name") == "MyMemory Translation":
+            return self.translate_mymemory_batch(batch, provider)
         if provider.get("name") == "Cloudflare Workers AI":
             return self.translate_cloudflare_batch(batch, provider)
 
