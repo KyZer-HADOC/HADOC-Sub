@@ -4,7 +4,7 @@ HADOC Sub is a Windows desktop subtitle studio for translating English SRT files
 
 ## Version 1.6.0
 
-This release adds batched Google Translate Web requests as the fast first-choice translator, with MyMemory as a no-API-key fallback. Repeated MyMemory subtitle lines are cached during the session.
+This release adds batched Google Translate Web requests as the fast first-choice translator, automatically adds MyMemory as a no-API-key fallback, and caches repeated MyMemory subtitle lines during the session.
 Release v1.6.0 Windows build is available from the GitHub Releases page.
 
 - Modern dark Windows desktop interface with maximized launch and F11 fullscreen.
@@ -23,8 +23,8 @@ Release v1.6.0 Windows build is available from the GitHub Releases page.
 2. Choose **Google Translate (Fast)**.
 3. The endpoint and language pair (`en|si`) are filled in automatically. No API key is required.
 4. Click Test API, then Add to provider pool.
-5. Choose **MyMemory Translation** and add it as the fallback. Its API key is also optional; an email increases its daily allowance.
-6. Click Save & Start HADOC Sub, open an English SRT, and click Start translation.
+5. Click Save & Start HADOC Sub. MyMemory is automatically added as the fallback.
+6. To increase MyMemory's daily allowance, open API Settings, select MyMemory Translation, and optionally enter an email address.
 
 Settings can be changed later from API Settings. API keys and optional provider emails are encrypted with Windows DPAPI and are bound to the Windows account that saved them.
 
