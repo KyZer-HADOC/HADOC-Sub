@@ -938,41 +938,102 @@ class HadocSub:
         if not self.items:
             messagebox.showinfo("Load subtitles first", "Open an English SRT file before starting translation.")
             return
-        base = self.api_url.get().strip().rstrip("/")
-        model = self.model.get().strip()
-        key = self.api_key.get().strip()
-        if not base or not model or not key:
-            messagebox.showwarning("API settings missing", "Open API Settings and check your provider details.")
+        if not self.providers:
+            messagebox.showwarning("No API providers", "Open API Settings and add at least one provider.")
             return
+        pending = [(i, item.original) for i, item in enumerate(self.items) if not item.translated.strip()]
+        if not pending:
+            messagebox.showinfo("Already translated", "All subtitle lines already have Sinhala text. Save your SRT file.")
+            return
+        if not self.source_path:
+            messagebox.showwarning("No source file", "Open the original SRT file again before translating.")
+            return
+        providers = [dict(item) for item in self.providers]
+        all_rows = [(item.number, item.timing, item.original) for item in self.items]
+        existing = {i: item.translated for i, item in enumerate(self.items) if item.translated.strip()}
+        try:
+            fingerprint = self.source_fingerprint
+        except AttributeError:
+            fingerprint = source_fingerprint(self.source_path)
+            self.source_fingerprint = fingerprint
+
         self.busy = True
         self.start_button.configure(state="disabled", text="Translating…")
-        self.set_status("Translating subtitle lines…", "working")
-        self.progress_bar.set(0)
-        self.progress_percent.configure(text="0%")
-        snapshot = [(i, item.original) for i, item in enumerate(self.items)]
-        threading.Thread(target=self.translation_worker, args=(snapshot, base, model, key), daemon=True).start()
+        self.set_status(
+            f"Starting {len(pending):,} remaining lines with {len(providers)} API provider(s)…",
+            "working"
+        )
+        self.progress_bar.set(sum(bool(item.translated.strip()) for item in self.items) / len(self.items))
+        self.progress_percent.configure(text=f"{round(sum(bool(item.translated.strip()) for item in self.items) * 100 / len(self.items))}%")
+        source_path = str(self.source_path)
+        threading.Thread(
+            target=self.translation_worker,
+            args=(pending, providers, source_path, fingerprint, all_rows, existing),
+            daemon=True
+        ).start()
 
-    def translation_worker(self, snapshot, base, model, key):
-        batch_size = 18
+    def translation_worker(self, snapshot, providers, source_path, fingerprint, all_rows, existing):
+        # Smaller batches reduce per-request token spikes. Provider fallback protects the job
+        # when one service returns 429, a temporary server error, or an invalid model/key.
+        batch_size = 10
+        blocked_providers = set()
+        translations = dict(existing)
         try:
             total = len(snapshot)
+            completed = 0
+            last_provider = None
             for offset in range(0, total, batch_size):
                 batch = snapshot[offset:offset + batch_size]
-                translations = self.translate_batch(batch, base, model, key)
-                for index, value in translations.items():
+                result, provider_name = self.translate_with_pool(batch, providers, blocked_providers)
+                translations.update(result)
+                completed += len(batch)
+
+                # Persist after every successful batch so a closed app can resume safely.
+                self.write_checkpoint(source_path, fingerprint, all_rows, translations)
+
+                if provider_name != last_provider:
+                    self.events.put(("provider_used", provider_name))
+                    last_provider = provider_name
+                for index, value in result.items():
                     self.events.put(("translated_row", index, value))
-                self.events.put(("translation_progress", min(offset + len(batch), total), total))
+                self.events.put(("translation_progress", completed, total))
+
             self.events.put(("translation_complete", total))
         except Exception as exc:
             self.events.put(("translation_error", str(exc)))
 
-    def translate_batch(self, batch, base, model, key):
+    def translate_with_pool(self, batch, providers, blocked_providers):
+        failures = []
+        for index, provider in enumerate(providers):
+            if index in blocked_providers:
+                continue
+            try:
+                result = self.translate_batch(batch, provider)
+                return result, provider["name"]
+            except Exception as exc:
+                blocked_providers.add(index)
+                failures.append(f"{provider['name']}: {exc}")
+                self.events.put(("provider_fallback", provider["name"], str(exc)))
+                continue
+
+        if not failures:
+            detail = "Every configured provider has already been marked unavailable for this run."
+        else:
+            detail = "\n".join("• " + item for item in failures)
+        raise RuntimeError(
+            "All configured APIs are currently unavailable for this translation batch.\n\n"
+            + detail
+            + "\n\nHADOC Sub has saved completed subtitle batches. Add another provider or wait for a quota reset, "
+              "then click Start translation again to resume only the remaining lines."
+        )
+
+    def translate_batch(self, batch, provider):
         payload = [{"index": index + 1, "text": text} for index, text in batch]
         system = (
             "You are a professional English-to-Sinhala movie subtitle translator. "
             "Translate into natural, concise, emotionally appropriate Sri Lankan Sinhala. "
             "Use everyday spoken Sinhala that fits the scene and subtitle reading speed. "
-            "Preserve names, meaning, tone, line breaks when practical, and formatting tags exactly, "
+            "Preserve character names, meaning, tone, line breaks when practical, and formatting tags exactly, "
             "including <i>, </i>, and {\\\\an8}. Do not add explanations, speaker labels, quotes, or notes. "
             "Return ONLY valid JSON in this exact shape: "
             '{"translations":[{"index":1,"text":"Sinhala translation"}]}. '
@@ -981,38 +1042,67 @@ class HadocSub:
         user = "Translate these subtitle items from English to Sinhala. Keep indices unchanged. JSON only:\n"
         user += json.dumps(payload, ensure_ascii=False)
         body = json.dumps({
-            "model": model,
+            "model": provider["model"],
             "messages": [
                 {"role": "system", "content": system},
                 {"role": "user", "content": user}
             ]
         }, ensure_ascii=False).encode("utf-8")
         request = urllib.request.Request(
-            base + "/chat/completions", data=body,
-            headers={"Authorization": "Bearer " + key, "Content-Type": "application/json",
-                     "User-Agent": "HADOC-Sub/" + VERSION},
+            provider["url"].rstrip("/") + "/chat/completions",
+            data=body,
+            headers={
+                "Authorization": "Bearer " + provider["key"],
+                "Content-Type": "application/json",
+                "User-Agent": "HADOC-Sub/" + VERSION,
+                "HTTP-Referer": "https://github.com/KyZer-HADOC/HADOC-Sub",
+                "X-Title": "HADOC Sub",
+            },
             method="POST"
         )
         try:
-            with urllib.request.urlopen(request, timeout=120) as response:
+            with urllib.request.urlopen(request, timeout=150) as response:
                 data = json.loads(response.read().decode("utf-8"))
         except urllib.error.HTTPError as exc:
             detail = exc.read().decode("utf-8", errors="replace")[:700]
-            if exc.code in (401, 403):
-                raise RuntimeError("API authentication failed. Check your API key and provider permissions.") from exc
+            retry_after = parse_retry_seconds(exc.headers)
             if exc.code == 429:
-                raise RuntimeError("API rate limit or quota reached. Check provider limits and try again.") from exc
-            raise RuntimeError(f"Translation API error ({exc.code}): {detail}") from exc
-        except urllib.error.URLError as exc:
-            raise RuntimeError(f"Could not connect to translation API: {exc.reason}") from exc
+                extra = f" Retry window: about {retry_after}s." if retry_after else ""
+                raise ProviderFailure(
+                    provider["name"], exc.code,
+                    "Rate limit or quota reached." + extra + " " + detail,
+                    retry_after
+                ) from exc
+            if exc.code in (401, 403):
+                raise ProviderFailure(
+                    provider["name"], exc.code,
+                    "Authentication or access denied. Check this API key and model access. " + detail
+                ) from exc
+            raise ProviderFailure(
+                provider["name"], exc.code,
+                f"Provider returned HTTP {exc.code}. " + detail,
+                retry_after
+            ) from exc
+        except (urllib.error.URLError, TimeoutError) as exc:
+            raise ProviderFailure(
+                provider["name"], None, "Network or timeout error: " + str(exc)
+            ) from exc
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+            raise ProviderFailure(
+                provider["name"], None, "Provider returned invalid JSON: " + str(exc)
+            ) from exc
+
         try:
             answer = data["choices"][0]["message"]["content"]
-        except (KeyError, IndexError, TypeError):
-            raise RuntimeError("The API response did not contain a chat completion.")
-        result = parse_json_response(answer)
+            result = parse_json_response(answer)
+        except Exception as exc:
+            raise ProviderFailure(
+                provider["name"], None, "Could not read a valid translation response: " + str(exc)
+            ) from exc
+
         rows = result.get("translations")
         if not isinstance(rows, list):
-            raise RuntimeError("The model response did not include a translations list.")
+            raise ProviderFailure(provider["name"], None, "The model response did not include a translations list.")
         expected = {index + 1 for index, _ in batch}
         mapped = {}
         for row in rows:
@@ -1025,9 +1115,9 @@ class HadocSub:
                     mapped[index - 1] = row["text"].strip()
         missing = expected - {index + 1 for index in mapped}
         if missing:
-            raise RuntimeError(
-                "The model missed subtitle item(s): " + ", ".join(map(str, sorted(missing))) +
-                ". No subtitle timings were changed. Try translating again."
+            raise ProviderFailure(
+                provider["name"], None,
+                "The model omitted subtitle item(s): " + ", ".join(map(str, sorted(missing))) + "."
             )
         return mapped
 
