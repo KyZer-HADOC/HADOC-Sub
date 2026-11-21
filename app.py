@@ -44,7 +44,7 @@ PROVIDERS = {
     },
     "MyMemory Translation": {
         "url": "https://api.mymemory.translated.net",
-        "model": "en|si",
+        "model": "en-US|si-LK",
     },
 }
 BG = "#080d16"
@@ -178,8 +178,8 @@ def cloudflare_model_endpoint(base_url, model):
     return base_url.rstrip("/") + "/" + model.lstrip("/")
 
 
-def build_mymemory_url(base_url, text, email=""):
-    params = {"q": text, "langpair": "en|si", "mt": "1"}
+def build_mymemory_url(base_url, text, email="", langpair="en-US|si-LK"):
+    params = {"q": text, "langpair": langpair, "mt": "1"}
     if email:
         params["de"] = email
     return base_url.rstrip("/") + "/get?" + urllib.parse.urlencode(params)
@@ -327,9 +327,9 @@ class HadocSub:
         self.progress_dir = self.settings_path.parent / "progress"
         self.providers = []
 
-        self.provider = tk.StringVar(value="Google Gemini")
-        self.api_url = tk.StringVar(value=PROVIDERS["Google Gemini"]["url"])
-        self.model = tk.StringVar(value=PROVIDERS["Google Gemini"]["model"])
+        self.provider = tk.StringVar(value="MyMemory Translation")
+        self.api_url = tk.StringVar(value=PROVIDERS["MyMemory Translation"]["url"])
+        self.model = tk.StringVar(value=PROVIDERS["MyMemory Translation"]["model"])
         self.api_key = tk.StringVar()
         self.key_visible = False
         self.search_text = tk.StringVar()
@@ -650,7 +650,11 @@ class HadocSub:
         if any(p["url"] == base and p["model"] == model and p["name"] == name for p in self.providers):
             messagebox.showinfo("Already added", "This provider and model are already in your pool.")
             return
-        self.providers.append({"name": name, "url": base, "model": model, "key": key})
+        provider_entry = {"name": name, "url": base, "model": model, "key": key}
+        if name == "MyMemory Translation":
+            self.providers.insert(0, provider_entry)
+        else:
+            self.providers.append(provider_entry)
         self.api_key.set("")
         self.setup_status.set(f"{name} added. Add another provider or save your provider pool.")
         self.setup_status_label.configure(text=self.setup_status.get(), text_color=GREEN)
@@ -1198,7 +1202,9 @@ class HadocSub:
         )
 
     def request_mymemory_chunk(self, provider, text):
-        url = build_mymemory_url(provider["url"], text, provider.get("key", ""))
+        url = build_mymemory_url(
+            provider["url"], text, provider.get("key", ""), provider.get("model", "en-US|si-LK")
+        )
         request = urllib.request.Request(
             url,
             headers={
