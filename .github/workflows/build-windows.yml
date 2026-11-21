@@ -1,5 +1,5 @@
 name: Build HADOC Sub for Windows
-# Version 1.6.0 — batched Google Translate Web and MyMemory fallback [release build]
+# Version 1.7.0 — video-to-Sinhala subtitles with Groq Whisper [release build]
 
 on:
   push:
@@ -15,7 +15,7 @@ on:
       release_tag:
         description: Release tag (for example v1.0.0)
         required: false
-        default: v1.6.0
+        default: v1.7.0
         type: string
 
 permissions:
