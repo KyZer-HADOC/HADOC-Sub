@@ -7,8 +7,11 @@ import json
 import os
 import queue
 import re
+import subprocess
+import tempfile
 import threading
 import time
+import uuid
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -20,7 +23,7 @@ from tkinter import filedialog, messagebox, ttk
 
 import customtkinter as ctk
 
-VERSION = "1.6.0"
+VERSION = "1.7.0"
 PROVIDERS = {
     "Google Gemini": {
         "url": "https://generativelanguage.googleapis.com/v1beta/openai",
@@ -103,6 +106,45 @@ class ProviderFailure(RuntimeError):
         self.provider_name = provider_name
         self.status_code = status_code
         self.retry_after = retry_after
+
+
+def format_srt_timestamp(seconds):
+    milliseconds = max(0, int(round(float(seconds) * 1000)))
+    hours, remainder = divmod(milliseconds, 3_600_000)
+    minutes, remainder = divmod(remainder, 60_000)
+    whole_seconds, millis = divmod(remainder, 1000)
+    return f"{hours:02}:{minutes:02}:{whole_seconds:02},{millis:03}"
+
+
+def transcription_segments_to_srt(segments, offset_seconds=0.0):
+    """Convert timestamped speech-recognition segments into a valid SRT string."""
+    rows = []
+    for segment in segments:
+        if not isinstance(segment, dict):
+            continue
+        text = segment.get("text")
+        if not isinstance(text, str) or not text.strip():
+            continue
+        try:
+            start = max(0.0, float(segment.get("start", 0)) + offset_seconds)
+            end = max(start + 0.25, float(segment.get("end", start + 0.5)) + offset_seconds)
+        except (TypeError, ValueError):
+            continue
+        rows.append((start, end, text.strip()))
+
+    rows.sort(key=lambda row: (row[0], row[1]))
+    return "\\n\\n".join(
+        f"{index}\\n{format_srt_timestamp(start)} --> {format_srt_timestamp(end)}\\n{text}"
+        for index, (start, end, text) in enumerate(rows, 1)
+    ) + ("\\n" if rows else "")
+
+
+def media_fingerprint(path):
+    """Fast resume identity for large media files without hashing gigabytes of video."""
+    path = Path(path).resolve()
+    stat = path.stat()
+    identity = f"{os.path.normcase(str(path))}|{stat.st_size}|{stat.st_mtime_ns}"
+    return hashlib.sha256(identity.encode("utf-8")).hexdigest()
 
 
 def source_fingerprint(path):
@@ -362,6 +404,7 @@ class HadocSub:
         self.events = queue.Queue()
         self.items = []
         self.source_path = None
+        self.video_path = None
         self.selected = None
         self.busy = False
         self.fullscreen = False
@@ -920,7 +963,7 @@ class HadocSub:
         title_area = ctk.CTkFrame(top, fg_color="transparent")
         title_area.grid(row=0, column=0, sticky="w")
         self.make_label(title_area, "Subtitle Studio", TEXT, 27, "bold").pack(anchor="w")
-        self.make_label(title_area, "Translate, review and export your movie subtitles.", MUTED, 12).pack(anchor="w", pady=(4, 0))
+        self.make_label(title_area, "Generate subtitles from video, translate, review and export.", MUTED, 12).pack(anchor="w", pady=(4, 0))
         self.make_button(top, "⚙  Settings", self.open_settings, height=39, width=125).grid(row=0, column=1, sticky="e")
 
         body = ctk.CTkFrame(content, fg_color="transparent")
@@ -932,15 +975,19 @@ class HadocSub:
         file_card = ctk.CTkFrame(body, fg_color=PANEL, corner_radius=16, border_width=1, border_color=BORDER)
         file_card.grid(row=0, column=0, sticky="nsew", padx=(0, 15))
         file_card.grid_columnconfigure(0, weight=1)
-        self.make_label(file_card, "01  SOURCE SUBTITLE", "#c8d4e5", 11, "bold").grid(row=0, column=0, sticky="w", padx=20, pady=(20, 6))
-        self.make_label(file_card, "Open an English .srt file from your PC.", MUTED, 11, anchor="w", wraplength=270).grid(row=1, column=0, sticky="w", padx=20, pady=(0, 17))
+        self.make_label(file_card, "01  SOURCE FILE", "#c8d4e5", 11, "bold").grid(row=0, column=0, sticky="w", padx=20, pady=(20, 6))
+        self.make_label(file_card, "Open an existing SRT or generate subtitles directly from a video.", MUTED, 11, anchor="w", wraplength=270).grid(row=1, column=0, sticky="w", padx=20, pady=(0, 17))
 
         drop = ctk.CTkFrame(file_card, fg_color=PANEL_3, corner_radius=13, border_width=1, border_color="#31435c")
         drop.grid(row=2, column=0, sticky="ew", padx=17, pady=(0, 15))
         self.make_label(drop, "＋", ACCENT, 34, "bold").pack(pady=(18, 4))
-        self.make_label(drop, "Choose subtitle file", TEXT, 13, "bold").pack()
-        self.make_label(drop, "SRT format  •  UTF-8 supported", MUTED, 10).pack(pady=(4, 14))
-        self.make_button(drop, "Browse SRT file", self.open_file, primary=True, height=40, width=190).pack(pady=(0, 18))
+        self.make_label(drop, "Choose a source", TEXT, 13, "bold").pack()
+        self.make_label(drop, "SRT subtitles or MP4 / MKV / MOV video", MUTED, 10).pack(pady=(4, 12))
+        self.make_button(drop, "Browse SRT file", self.open_file, primary=True, height=38, width=190).pack(pady=(0, 7))
+        self.make_button(drop, "🎬  Open Video", self.open_video, height=38, width=190).pack(pady=(0, 7))
+        self.generate_button = self.make_button(drop, "✦  Generate Sinhala Subtitles", self.start_video_generation, height=40, width=230, state="disabled")
+        self.generate_button.pack(pady=(0, 16))
+        self.make_label(file_card, "Video transcription needs a Groq API key. Add it once in API Settings.", "#91aa9f", 9, anchor="w", wraplength=270, justify="left").grid(row=5, column=0, sticky="ew", padx=20, pady=(9, 4))
 
         self.make_label(file_card, "SELECTED FILE", "#8fa1b8", 9, "bold").grid(row=3, column=0, sticky="w", padx=20, pady=(3, 5))
         self.file_name_label = self.make_label(file_card, self.file_text.get(), TEXT, 11, anchor="w", wraplength=270, justify="left")
@@ -1134,6 +1181,9 @@ class HadocSub:
         )
         if not name:
             return
+        self.video_path = None
+        if hasattr(self, "generate_button"):
+            self.generate_button.configure(state="disabled")
         try:
             try:
                 raw = Path(name).read_text(encoding="utf-8-sig")
@@ -1165,6 +1215,231 @@ class HadocSub:
             )
         else:
             self.set_status(f"Loaded {len(self.items):,} subtitle entries", "success")
+
+    def open_video(self):
+        if self.busy:
+            return
+        name = filedialog.askopenfilename(
+            title="Open video to generate subtitles",
+            filetypes=[
+                ("Video files", "*.mp4 *.mkv *.avi *.mov *.m4v *.webm *.wmv *.flv"),
+                ("All files", "*.*"),
+            ],
+        )
+        if not name:
+            return
+        path = Path(name)
+        try:
+            fingerprint = media_fingerprint(path)
+        except OSError as exc:
+            messagebox.showerror("Could not read video", str(exc))
+            return
+        self.video_path = path
+        self.source_path = path
+        self.source_fingerprint = fingerprint
+        self.items = []
+        self.selected = None
+        self.file_text.set(path.name + "  •  Video ready for transcription")
+        if hasattr(self, "file_name_label"):
+            self.file_name_label.configure(text=self.file_text.get())
+        if hasattr(self, "table"):
+            self.refresh_table()
+            self.clear_editor()
+            self.update_stats_cards()
+            self.update_translation_progress()
+            self.set_status("Video selected. Click Generate Sinhala Subtitles.", "success")
+        if hasattr(self, "generate_button"):
+            self.generate_button.configure(state="normal")
+
+    def find_groq_transcription_key(self):
+        for provider in self.providers:
+            if provider.get("key") and (
+                provider.get("name", "").strip().casefold() == "groq"
+                or "api.groq.com" in provider.get("url", "").casefold()
+            ):
+                return provider["key"]
+        return ""
+
+    def start_video_generation(self):
+        if self.busy:
+            return
+        if not self.video_path or not self.video_path.exists():
+            messagebox.showinfo("Choose a video", "Open an MP4, MKV, MOV or another supported video first.")
+            return
+        key = self.find_groq_transcription_key()
+        if not key:
+            messagebox.showwarning(
+                "Groq API key required",
+                "Video subtitle generation uses Groq Whisper.\\n\\n"
+                "Open API Settings, choose Groq, paste your Groq API key, click "
+                "Add to provider pool, then Save and return.",
+            )
+            return
+        self.busy = True
+        self.generate_button.configure(state="disabled", text="Preparing video…")
+        self.start_button.configure(state="disabled")
+        self.progress_bar.set(0)
+        self.progress_percent.configure(text="0%", text_color=ACCENT)
+        self.set_status("Preparing audio for Whisper transcription…", "working")
+        threading.Thread(
+            target=self.video_transcription_worker,
+            args=(str(self.video_path), key),
+            daemon=True,
+        ).start()
+
+    def extract_video_audio_chunk(self, ffmpeg, video_path, output_path, start_seconds, duration_seconds):
+        command = [
+            ffmpeg, "-hide_banner", "-loglevel", "error", "-y",
+            "-ss", f"{start_seconds:.3f}", "-i", video_path,
+            "-t", f"{duration_seconds:.3f}", "-map", "0:a:0", "-vn",
+            "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", "-f", "wav",
+            output_path,
+        ]
+        result = subprocess.run(
+            command, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            text=True, encoding="utf-8", errors="replace", timeout=900,
+        )
+        if result.returncode != 0 or not os.path.isfile(output_path):
+            detail = (result.stderr or "No audio track was found in the selected video.")[-1200:]
+            raise RuntimeError("FFmpeg could not extract the video audio. " + detail)
+        size = os.path.getsize(output_path)
+        if size > 24_000_000:
+            raise RuntimeError(
+                "An audio chunk exceeded Groq's 25 MB free-tier upload limit. "
+                "Try a shorter video or split it into smaller files."
+            )
+
+    def request_groq_transcription(self, audio_path, api_key):
+        boundary = "----HADOCSub" + uuid.uuid4().hex
+        pieces = []
+
+        def add_field(name, value):
+            pieces.append(
+                f"--{boundary}\\r\\n"
+                f'Content-Disposition: form-data; name="{name}"\\r\\n\\r\\n'
+                f"{value}\\r\\n".encode("utf-8")
+            )
+
+        add_field("model", "whisper-large-v3-turbo")
+        add_field("language", "en")
+        add_field("response_format", "verbose_json")
+        add_field("temperature", "0")
+        add_field("timestamp_granularities[]", "segment")
+
+        filename = Path(audio_path).name
+        with open(audio_path, "rb") as stream:
+            audio_data = stream.read()
+        pieces.append(
+            f"--{boundary}\\r\\n"
+            f'Content-Disposition: form-data; name="file"; filename="{filename}"\\r\\n'
+            "Content-Type: audio/wav\\r\\n\\r\\n".encode("utf-8")
+            + audio_data + b"\\r\\n"
+        )
+        pieces.append(f"--{boundary}--\\r\\n".encode("ascii"))
+        body = b"".join(pieces)
+        request = urllib.request.Request(
+            "https://api.groq.com/openai/v1/audio/transcriptions",
+            data=body,
+            headers={
+                "Authorization": "Bearer " + api_key,
+                "Content-Type": "multipart/form-data; boundary=" + boundary,
+                "Accept": "application/json",
+                "User-Agent": "HADOC-Sub/" + VERSION,
+            },
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=300) as response:
+                data = json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace")[:1000]
+            if exc.code == 429:
+                raise RuntimeError("Groq Whisper rate limit or daily quota reached. " + detail) from exc
+            if exc.code in (401, 403):
+                raise RuntimeError("Groq rejected the API key or Whisper access. " + detail) from exc
+            raise RuntimeError(f"Groq Whisper returned HTTP {exc.code}: {detail}") from exc
+        except (urllib.error.URLError, TimeoutError) as exc:
+            raise RuntimeError("Groq Whisper network or timeout error: " + str(exc)) from exc
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+            raise RuntimeError("Groq Whisper returned invalid JSON: " + str(exc)) from exc
+
+        segments = data.get("segments") if isinstance(data, dict) else None
+        if not isinstance(segments, list):
+            raise RuntimeError("Groq did not return timestamped segments. Please retry the video.")
+        return segments
+
+    def video_transcription_worker(self, video_path, api_key):
+        try:
+            try:
+                import imageio_ffmpeg
+                ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
+            except Exception as exc:
+                raise RuntimeError(
+                    "The bundled FFmpeg tool could not be loaded. Reinstall the latest HADOC-Sub build. "
+                    + str(exc)
+                ) from exc
+
+            probe = subprocess.run(
+                [ffmpeg, "-hide_banner", "-i", video_path],
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                text=True, encoding="utf-8", errors="replace", timeout=60,
+            )
+            metadata = probe.stderr or probe.stdout
+            duration_match = re.search(
+                r"Duration:\\s*(\\d+):(\\d+):(\\d+(?:\\.\\d+)?)", metadata
+            )
+            if not duration_match:
+                raise RuntimeError(
+                    "Could not read the video duration. The file may be damaged or use an unsupported container."
+                )
+            hours, minutes, seconds = duration_match.groups()
+            total_seconds = int(hours) * 3600 + int(minutes) * 60 + float(seconds)
+            if total_seconds <= 0:
+                raise RuntimeError("The selected video has no playable duration.")
+            chunk_seconds = 8 * 60
+            chunk_count = int((total_seconds + chunk_seconds - 1) // chunk_seconds)
+            all_segments = []
+
+            with tempfile.TemporaryDirectory(prefix="hadoc_sub_audio_") as temp_dir:
+                for chunk_index in range(chunk_count):
+                    start = chunk_index * chunk_seconds
+                    length = min(chunk_seconds, total_seconds - start)
+                    audio_path = os.path.join(temp_dir, f"audio_{chunk_index + 1:04}.wav")
+                    self.events.put((
+                        "video_progress", chunk_index, chunk_count,
+                        f"Extracting audio {chunk_index + 1}/{chunk_count}…",
+                    ))
+                    self.extract_video_audio_chunk(
+                        ffmpeg, video_path, audio_path, start, length
+                    )
+                    self.events.put((
+                        "video_progress", chunk_index, chunk_count,
+                        f"Transcribing audio {chunk_index + 1}/{chunk_count} with Groq Whisper…",
+                    ))
+                    segments = self.request_groq_transcription(audio_path, api_key)
+                    for segment in segments:
+                        if isinstance(segment, dict):
+                            adjusted = dict(segment)
+                            try:
+                                adjusted["start"] = float(adjusted.get("start", 0)) + start
+                                adjusted["end"] = float(adjusted.get("end", 0)) + start
+                            except (TypeError, ValueError):
+                                continue
+                            all_segments.append(adjusted)
+
+                    self.events.put((
+                        "video_progress", chunk_index + 1, chunk_count,
+                        f"Transcribed {chunk_index + 1}/{chunk_count} audio sections.",
+                    ))
+
+            raw_srt = transcription_segments_to_srt(all_segments)
+            if not raw_srt.strip():
+                raise RuntimeError(
+                    "No speech was detected in this video. Check that it contains clear English dialogue."
+                )
+            self.events.put(("video_transcription_complete", raw_srt, len(all_segments)))
+        except Exception as exc:
+            self.events.put(("video_transcription_error", str(exc)))
 
     def refresh_table(self):
         if not hasattr(self, "table"):
@@ -1235,7 +1510,7 @@ class HadocSub:
         if self.busy:
             return
         if not self.items:
-            messagebox.showinfo("Load subtitles first", "Open an English SRT file before starting translation.")
+            messagebox.showinfo("Load subtitles first", "Open an English SRT file or generate subtitles from a video first.")
             return
         if not self.providers:
             messagebox.showwarning("No API providers", "Open API Settings and add at least one provider.")
@@ -1258,6 +1533,8 @@ class HadocSub:
 
         self.busy = True
         self.start_button.configure(state="disabled", text="Translating…")
+        if hasattr(self, "generate_button"):
+            self.generate_button.configure(state="disabled")
         self.set_status(
             f"Starting {len(pending):,} remaining lines with {len(providers)} API provider(s)…",
             "working"
@@ -1667,6 +1944,55 @@ class HadocSub:
                     self.setup_status.set(event[1])
                     if hasattr(self, "setup_status_label") and self.setup_status_label.winfo_exists():
                         self.setup_status_label.configure(text=event[1], text_color=YELLOW)
+                elif kind == "video_progress":
+                    _, completed, total, detail = event
+                    pct = round(completed * 100 / total) if total else 0
+                    self.progress_bar.set(pct / 100)
+                    self.progress_percent.configure(text=f"{pct}%")
+                    self.status_text.set(detail)
+                    self.status_label.configure(text=detail)
+                elif kind == "video_transcription_complete":
+                    _, raw_srt, segment_count = event
+                    self.busy = False
+                    self.start_button.configure(state="normal", text="▶  Start translation")
+                    self.generate_button.configure(state="normal", text="✦  Generate Sinhala Subtitles")
+                    try:
+                        self.items = parse_srt(raw_srt)
+                        self.source_fingerprint = media_fingerprint(self.source_path)
+                        english_path = self.source_path.with_name(self.source_path.stem + "_en.srt")
+                        english_path.write_text(raw_srt, encoding="utf-8")
+                    except OSError:
+                        english_path = None
+                    except Exception as exc:
+                        self.status_text.set("Could not prepare generated subtitles: " + str(exc))
+                        self.status_label.configure(text=self.status_text.get())
+                        messagebox.showerror("Subtitle generation failed", str(exc))
+                        return
+                    restored = self.restore_checkpoint()
+                    self.file_text.set(
+                        self.source_path.name + "  •  " + f"{len(self.items):,} speech segments"
+                    )
+                    self.file_name_label.configure(text=self.file_text.get())
+                    self.selected = None
+                    self.clear_editor()
+                    self.refresh_table()
+                    self.update_stats_cards()
+                    self.update_translation_progress()
+                    info = f"Detected {len(self.items):,} timestamped speech segments."
+                    if english_path:
+                        info += f"\\nEnglish SRT saved: {english_path.name}"
+                    else:
+                        info += "\\nEnglish SRT could not be saved beside the video; Sinhala translation will continue."
+                    if restored:
+                        info += f"\\nRestored {restored:,} previously translated lines."
+                    self.set_status(info.replace("\\n", " • "), "success")
+                    self.start_translation()
+                elif kind == "video_transcription_error":
+                    self.busy = False
+                    self.start_button.configure(state="normal", text="▶  Start translation")
+                    self.generate_button.configure(state="normal", text="✦  Generate Sinhala Subtitles")
+                    self.set_status("Video transcription stopped.", "ready")
+                    messagebox.showerror("Video subtitle generation failed", event[1])
                 elif kind == "provider_fallback":
                     provider_name, reason = event[1], event[2]
                     self.set_status(
@@ -1700,6 +2026,8 @@ class HadocSub:
                     total = event[1]
                     self.busy = False
                     self.start_button.configure(state="normal", text="▶   Start translation")
+                    if hasattr(self, "generate_button"):
+                        self.generate_button.configure(state="normal", text="✦  Generate Sinhala Subtitles")
                     self.progress_bar.set(1)
                     self.progress_percent.configure(text="100%", text_color=GREEN)
                     translated_total = sum(bool(item.translated.strip()) for item in self.items)
@@ -1714,6 +2042,8 @@ class HadocSub:
                 elif kind == "translation_error":
                     self.busy = False
                     self.start_button.configure(state="normal", text="▶   Start translation")
+                    if hasattr(self, "generate_button"):
+                        self.generate_button.configure(state="normal", text="✦  Generate Sinhala Subtitles")
                     self.status_text.set("Translation stopped • completed batches were saved")
                     self.status_label.configure(text=self.status_text.get())
                     self.progress_percent.configure(text_color=YELLOW)
