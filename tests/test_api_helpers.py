@@ -1,8 +1,12 @@
 import unittest
+import urllib.parse
 
 from app import (
+    build_mymemory_url,
     cloudflare_model_endpoint,
     extract_cloudflare_translation,
+    extract_mymemory_translation,
+    split_mymemory_chunks,
     parse_json_response,
     parse_retry_seconds,
 )
@@ -44,6 +48,47 @@ class ApiHelperTests(unittest.TestCase):
             ),
             "https://api.cloudflare.com/client/v4/accounts/abc/ai/run/@cf/meta/m2m100-1.2b",
         )
+
+    def test_mymemory_translation_response(self):
+        response = {
+            "responseStatus": 200,
+            "responseData": {"translatedText": "ඔයාට කොහොමද?"},
+        }
+        self.assertEqual(extract_mymemory_translation(response), "ඔයාට කොහොමද?")
+
+    def test_mymemory_translation_error(self):
+        with self.assertRaises(ValueError):
+            extract_mymemory_translation({
+                "responseStatus": 403,
+                "responseDetails": "Daily quota exceeded",
+            })
+
+    def test_mymemory_url_uses_sinhala_and_optional_email(self):
+        url = build_mymemory_url(
+            "https://api.mymemory.translated.net",
+            "Hello world",
+            "test@example.com",
+            "en-US|si-LK",
+        )
+        query = urllib.parse.parse_qs(urllib.parse.urlparse(url).query)
+        self.assertEqual(query["langpair"], ["en-US|si-LK"])
+        self.assertEqual(query["de"], ["test@example.com"])
+        self.assertEqual(query["q"], ["Hello world"])
+
+    def test_mymemory_url_without_email(self):
+        url = build_mymemory_url(
+            "https://api.mymemory.translated.net",
+            "Hello",
+            "",
+            "en-US|si-LK",
+        )
+        query = urllib.parse.parse_qs(urllib.parse.urlparse(url).query)
+        self.assertNotIn("de", query)
+
+    def test_mymemory_chunks_respect_utf8_byte_limit(self):
+        chunks = split_mymemory_chunks(("ආයුබෝවන් " * 90).strip())
+        self.assertTrue(chunks)
+        self.assertTrue(all(len(chunk.encode("utf-8")) <= 450 for chunk in chunks))
 
 
 if __name__ == "__main__":
