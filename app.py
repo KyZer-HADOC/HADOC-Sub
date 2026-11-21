@@ -133,10 +133,10 @@ def transcription_segments_to_srt(segments, offset_seconds=0.0):
         rows.append((start, end, text.strip()))
 
     rows.sort(key=lambda row: (row[0], row[1]))
-    return "\\n\\n".join(
-        f"{index}\\n{format_srt_timestamp(start)} --> {format_srt_timestamp(end)}\\n{text}"
+    return "\n\n".join(
+        f"{index}\n{format_srt_timestamp(start)} --> {format_srt_timestamp(end)}\n{text}"
         for index, (start, end, text) in enumerate(rows, 1)
-    ) + ("\\n" if rows else "")
+    ) + ("\n" if rows else "")
 
 
 def media_fingerprint(path):
@@ -1270,7 +1270,7 @@ class HadocSub:
         if not key:
             messagebox.showwarning(
                 "Groq API key required",
-                "Video subtitle generation uses Groq Whisper.\\n\\n"
+                "Video subtitle generation uses Groq Whisper.\n\n"
                 "Open API Settings, choose Groq, paste your Groq API key, click "
                 "Add to provider pool, then Save and return.",
             )
@@ -1315,9 +1315,9 @@ class HadocSub:
 
         def add_field(name, value):
             pieces.append(
-                f"--{boundary}\\r\\n"
-                f'Content-Disposition: form-data; name="{name}"\\r\\n\\r\\n'
-                f"{value}\\r\\n".encode("utf-8")
+                f"--{boundary}\r\n"
+                f'Content-Disposition: form-data; name="{name}"\r\n\r\n'
+                f"{value}\r\n".encode("utf-8")
             )
 
         add_field("model", "whisper-large-v3-turbo")
@@ -1330,12 +1330,12 @@ class HadocSub:
         with open(audio_path, "rb") as stream:
             audio_data = stream.read()
         pieces.append(
-            f"--{boundary}\\r\\n"
-            f'Content-Disposition: form-data; name="file"; filename="{filename}"\\r\\n'
-            "Content-Type: audio/wav\\r\\n\\r\\n".encode("utf-8")
-            + audio_data + b"\\r\\n"
+            f"--{boundary}\r\n"
+            f'Content-Disposition: form-data; name="file"; filename="{filename}"\r\n'
+            "Content-Type: audio/wav\r\n\r\n".encode("utf-8")
+            + audio_data + b"\r\n"
         )
-        pieces.append(f"--{boundary}--\\r\\n".encode("ascii"))
+        pieces.append(f"--{boundary}--\r\n".encode("ascii"))
         body = b"".join(pieces)
         request = urllib.request.Request(
             "https://api.groq.com/openai/v1/audio/transcriptions",
@@ -1386,7 +1386,7 @@ class HadocSub:
             )
             metadata = probe.stderr or probe.stdout
             duration_match = re.search(
-                r"Duration:\\s*(\\d+):(\\d+):(\\d+(?:\\.\\d+)?)", metadata
+                r"Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)", metadata
             )
             if not duration_match:
                 raise RuntimeError(
@@ -1980,12 +1980,12 @@ class HadocSub:
                     self.update_translation_progress()
                     info = f"Detected {len(self.items):,} timestamped speech segments."
                     if english_path:
-                        info += f"\\nEnglish SRT saved: {english_path.name}"
+                        info += f"\nEnglish SRT saved: {english_path.name}"
                     else:
-                        info += "\\nEnglish SRT could not be saved beside the video; Sinhala translation will continue."
+                        info += "\nEnglish SRT could not be saved beside the video; Sinhala translation will continue."
                     if restored:
-                        info += f"\\nRestored {restored:,} previously translated lines."
-                    self.set_status(info.replace("\\n", " • "), "success")
+                        info += f"\nRestored {restored:,} previously translated lines."
+                    self.set_status(info.replace("\n", " • "), "success")
                     self.start_translation()
                 elif kind == "video_transcription_error":
                     self.busy = False
