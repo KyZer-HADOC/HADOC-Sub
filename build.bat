@@ -10,7 +10,7 @@ if %errorlevel%==0 (
     if errorlevel 1 goto failed
     py -m unittest discover -s tests -v
     if errorlevel 1 goto failed
-    py -m PyInstaller --noconfirm --clean --onefile --windowed --collect-all customtkinter --collect-all darkdetect --name HADOC-Sub app.py
+    py -m PyInstaller --noconfirm --clean --onefile --windowed --collect-all customtkinter --collect-all darkdetect --collect-all imageio_ffmpeg --name HADOC-Sub app.py
 ) else (
     python -m pip install -r requirements.txt
     if errorlevel 1 goto failed
@@ -18,7 +18,7 @@ if %errorlevel%==0 (
     if errorlevel 1 goto failed
     python -m unittest discover -s tests -v
     if errorlevel 1 goto failed
-    python -m PyInstaller --noconfirm --clean --onefile --windowed --collect-all customtkinter --collect-all darkdetect --name HADOC-Sub app.py
+    python -m PyInstaller --noconfirm --clean --onefile --windowed --collect-all customtkinter --collect-all darkdetect --collect-all imageio_ffmpeg --name HADOC-Sub app.py
 )
 
 if errorlevel 1 goto failed
