@@ -5,6 +5,7 @@ HADOC Sub is a Windows desktop subtitle studio for translating English SRT files
 ## Version 1.4.0
 
 This release adds a dedicated Cloudflare Workers AI translation provider with automatic failover and resumable SRT progress.
+Release v1.4.0 Windows build is available from the GitHub Releases page.
 
 - Modern dark Windows desktop interface with maximized launch and F11 fullscreen.
 - First-run API setup with encrypted provider credentials.
