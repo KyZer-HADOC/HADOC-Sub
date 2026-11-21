@@ -987,6 +987,8 @@ class HadocSub:
         self.make_button(drop, "🎬  Open Video", self.open_video, height=38, width=190).pack(pady=(0, 7))
         self.generate_button = self.make_button(drop, "✦  Generate Sinhala Subtitles", self.start_video_generation, height=40, width=230, state="disabled")
         self.generate_button.pack(pady=(0, 16))
+        if self.video_path and self.video_path.exists():
+            self.generate_button.configure(state="normal")
         self.make_label(file_card, "Video transcription needs a Groq API key. Add it once in API Settings.", "#91aa9f", 9, anchor="w", wraplength=270, justify="left").grid(row=5, column=0, sticky="ew", padx=20, pady=(9, 4))
 
         self.make_label(file_card, "SELECTED FILE", "#8fa1b8", 9, "bold").grid(row=3, column=0, sticky="w", padx=20, pady=(3, 5))
