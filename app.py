@@ -767,10 +767,10 @@ class HadocSub:
     def restore_checkpoint(self):
         if not self.source_path:
             return 0
-        checkpoint = self.checkpoint_file_for(self.source_path)
-        if not checkpoint.exists():
-            return 0
         try:
+            checkpoint = self.checkpoint_file_for(self.source_path)
+            if not checkpoint.exists():
+                return 0
             data = json.loads(checkpoint.read_text(encoding="utf-8"))
             if data.get("fingerprint") != self.source_fingerprint:
                 return 0
@@ -910,6 +910,9 @@ class HadocSub:
     def apply_edit(self):
         if self.selected is None:
             return
+        if self.busy:
+            messagebox.showinfo("Translation in progress", "You can edit subtitle lines after the current translation finishes.")
+            return
         self.items[self.selected].translated = self.translated_box.get("1.0", "end-1c").strip()
         self.refresh_table()
         if self.table.exists(str(self.selected)):
@@ -992,7 +995,10 @@ class HadocSub:
                 completed += len(batch)
 
                 # Persist after every successful batch so a closed app can resume safely.
-                self.write_checkpoint(source_path, fingerprint, all_rows, translations)
+                try:
+                    self.write_checkpoint(source_path, fingerprint, all_rows, translations)
+                except OSError as checkpoint_error:
+                    self.events.put(("checkpoint_warning", str(checkpoint_error)))
 
                 if provider_name != last_provider:
                     self.events.put(("provider_used", provider_name))
@@ -1145,6 +1151,8 @@ class HadocSub:
                     )
                 elif kind == "provider_used":
                     self.set_status(f"Translating with {event[1]}…", "working")
+                elif kind == "checkpoint_warning":
+                    self.set_status("Warning: could not save resume data. " + event[1], "ready")
                 elif kind == "translated_row":
                     _, index, value = event
                     self.items[index].translated = value
@@ -1216,7 +1224,10 @@ class HadocSub:
         except OSError as exc:
             messagebox.showerror("Could not save file", str(exc))
             return
-        self.remove_checkpoint()
+        if all(item.translated.strip() for item in self.items):
+            self.remove_checkpoint()
+        else:
+            self.write_current_checkpoint()
         self.set_status("Saved " + Path(name).name, "success")
         messagebox.showinfo("Saved successfully", "Sinhala SRT saved to:\n" + name)
 
