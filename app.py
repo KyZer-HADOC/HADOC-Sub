@@ -1134,6 +1134,14 @@ class HadocSub:
                     self.setup_status.set(event[1])
                     if hasattr(self, "setup_status_label") and self.setup_status_label.winfo_exists():
                         self.setup_status_label.configure(text=event[1], text_color=YELLOW)
+                elif kind == "provider_fallback":
+                    provider_name, reason = event[1], event[2]
+                    self.set_status(
+                        f"{provider_name} unavailable ({reason[:100]}). Switching to next API…",
+                        "working"
+                    )
+                elif kind == "provider_used":
+                    self.set_status(f"Translating with {event[1]}…", "working")
                 elif kind == "translated_row":
                     _, index, value = event
                     self.items[index].translated = value
@@ -1150,7 +1158,7 @@ class HadocSub:
                     pct = round(completed * 100 / total) if total else 0
                     self.progress_bar.set(pct / 100)
                     self.progress_percent.configure(text=f"{pct}%")
-                    self.status_text.set(f"Translated {completed:,} of {total:,} subtitle lines")
+                    self.status_text.set(f"Processed {completed:,} of {total:,} remaining subtitle lines")
                     self.status_label.configure(text=self.status_text.get())
                     self.update_translation_progress()
                 elif kind == "translation_complete":
@@ -1159,13 +1167,22 @@ class HadocSub:
                     self.start_button.configure(state="normal", text="▶   Start translation")
                     self.progress_bar.set(1)
                     self.progress_percent.configure(text="100%", text_color=GREEN)
-                    self.status_text.set(f"Translation complete • {total:,} subtitle lines")
-                    messagebox.showinfo("Translation complete", f"Translated {total:,} subtitle lines.\n\nReview the Sinhala subtitles and save your SRT file.")
+                    translated_total = sum(bool(item.translated.strip()) for item in self.items)
+                    self.status_text.set(f"Translation complete • {translated_total:,}/{len(self.items):,} lines")
+                    self.status_label.configure(text=self.status_text.get())
+                    messagebox.showinfo(
+                        "Translation complete",
+                        f"Completed {total:,} remaining subtitle lines.\n"
+                        f"Total Sinhala lines: {translated_total:,}/{len(self.items):,}.\n\n"
+                        "Review the translation and click Save SRT."
+                    )
                 elif kind == "translation_error":
                     self.busy = False
                     self.start_button.configure(state="normal", text="▶   Start translation")
-                    self.status_text.set("Translation stopped")
-                    messagebox.showerror("Translation failed", event[1])
+                    self.status_text.set("Translation stopped • completed batches were saved")
+                    self.status_label.configure(text=self.status_text.get())
+                    self.progress_percent.configure(text_color=YELLOW)
+                    messagebox.showerror("Translation paused", event[1])
         except queue.Empty:
             pass
         self.root.after(120, self.poll_events)
@@ -1196,6 +1213,7 @@ class HadocSub:
         except OSError as exc:
             messagebox.showerror("Could not save file", str(exc))
             return
+        self.remove_checkpoint()
         self.set_status("Saved " + Path(name).name, "success")
         messagebox.showinfo("Saved successfully", "Sinhala SRT saved to:\n" + name)
 
