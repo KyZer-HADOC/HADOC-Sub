@@ -1,4 +1,5 @@
 import base64
+from concurrent.futures import ThreadPoolExecutor
 import ctypes
 import hashlib
 from ctypes import wintypes
@@ -18,7 +19,7 @@ from tkinter import filedialog, messagebox, ttk
 
 import customtkinter as ctk
 
-VERSION = "1.3.0"
+VERSION = "1.4.0"
 PROVIDERS = {
     "Google Gemini": {
         "url": "https://generativelanguage.googleapis.com/v1beta/openai",
@@ -35,6 +36,10 @@ PROVIDERS = {
     "OpenRouter Free": {
         "url": "https://openrouter.ai/api/v1",
         "model": "openrouter/free",
+    },
+    "Cloudflare Workers AI": {
+        "url": "https://api.cloudflare.com/client/v4/accounts/ACCOUNT_ID/ai/run",
+        "model": "@cf/meta/m2m100-1.2b",
     },
 }
 BG = "#080d16"
@@ -132,6 +137,40 @@ def parse_json_response(value):
     if not isinstance(data, dict):
         raise ValueError("Unexpected translation response.")
     return data
+
+
+def extract_cloudflare_translation(data):
+    """Extract a translated string from the Workers AI REST API envelope."""
+    if not isinstance(data, dict):
+        raise ValueError("Cloudflare returned an unexpected response.")
+
+    if data.get("success") is False:
+        errors = data.get("errors") or []
+        detail = "; ".join(
+            str(item.get("message", item)) if isinstance(item, dict) else str(item)
+            for item in errors
+        )
+        raise ValueError(detail or "Cloudflare reported an unsuccessful request.")
+
+    result = data.get("result", data)
+    if isinstance(result, dict):
+        translated = (
+            result.get("translated_text")
+            or result.get("translation")
+            or result.get("answer")
+        )
+    elif isinstance(result, str):
+        translated = result
+    else:
+        translated = None
+
+    if not isinstance(translated, str) or not translated.strip():
+        raise ValueError("Cloudflare response did not contain translated_text.")
+    return translated.strip()
+
+
+def cloudflare_model_endpoint(base_url, model):
+    return base_url.rstrip("/") + "/" + model.lstrip("/")
 
 
 def _dpapi_blob(data):
@@ -391,7 +430,7 @@ class HadocSub:
         self.make_label(card, "Use more than one AI provider.", TEXT, 23, "bold",
                         anchor="w").grid(row=1, column=0, sticky="ew", padx=32, pady=(10, 4))
         self.make_label(
-            card, "Add Gemini, Groq and other compatible APIs. HADOC Sub will automatically switch when a provider hits a limit.",
+            card, "Add Gemini, Groq, Cloudflare Workers AI and other compatible APIs. HADOC Sub automatically switches when a provider hits a limit.",
             MUTED, 12, anchor="w", wraplength=650, justify="left"
         ).grid(row=2, column=0, sticky="ew", padx=32, pady=(0, 18))
 
@@ -409,7 +448,7 @@ class HadocSub:
         )
         self.provider_menu.grid(row=1, column=0, sticky="ew", pady=(0, 11))
 
-        self.make_label(form, "API BASE URL", "#c3cede", 10, "bold").grid(row=2, column=0, sticky="w", pady=(0, 5))
+        self.make_label(form, "API BASE URL  •  Cloudflare: replace ACCOUNT_ID with your Account ID", "#c3cede", 10, "bold").grid(row=2, column=0, sticky="w", pady=(0, 5))
         self.make_entry(form, self.api_url, "https://provider.example/v1").grid(row=3, column=0, sticky="ew", pady=(0, 10))
 
         self.make_label(form, "MODEL NAME", "#c3cede", 10, "bold").grid(row=4, column=0, sticky="w", pady=(0, 5))
@@ -513,6 +552,9 @@ class HadocSub:
         if not name or not model or not key:
             messagebox.showwarning("Missing details", "Choose a provider and enter its model name and API key.")
             return
+        if name == "Cloudflare Workers AI" and "ACCOUNT_ID" in base.upper():
+            messagebox.showwarning("Account ID required", "Replace ACCOUNT_ID in the API Base URL with your Cloudflare Account ID.")
+            return
         if any(p["url"] == base and p["model"] == model and p["name"] == name for p in self.providers):
             messagebox.showinfo("Already added", "This provider and model are already in your pool.")
             return
@@ -548,15 +590,29 @@ class HadocSub:
         base = self.api_url.get().strip().rstrip("/")
         model = self.model.get().strip()
         key = self.api_key.get().strip()
+        provider_name = self.provider.get().strip()
         if not base.startswith("https://") or not model or not key:
             self.setup_status.set("Enter the API URL, model and API key to test this provider.")
             self.setup_status_label.configure(text=self.setup_status.get(), text_color=YELLOW)
             return
-        self.setup_status.set("Testing " + self.provider.get() + " connection…")
+        if provider_name == "Cloudflare Workers AI" and "ACCOUNT_ID" in base.upper():
+            self.setup_status.set("Replace ACCOUNT_ID in the URL with your Cloudflare Account ID.")
+            self.setup_status_label.configure(text=self.setup_status.get(), text_color=YELLOW)
+            return
+        self.setup_status.set("Testing " + provider_name + " connection…")
         self.setup_status_label.configure(text=self.setup_status.get(), text_color=YELLOW)
-        threading.Thread(target=self.api_test_worker, args=(base, model, key), daemon=True).start()
+        threading.Thread(target=self.api_test_worker, args=(base, model, key, provider_name), daemon=True).start()
 
-    def api_test_worker(self, base, model, key):
+    def api_test_worker(self, base, model, key, provider_name):
+        if provider_name == "Cloudflare Workers AI":
+            provider = {"url": base, "model": model, "key": key}
+            try:
+                translated = self.request_cloudflare_translation(provider, "Hello, how are you?")
+                self.events.put(("api_test_ok", "Cloudflare connection successful. Test translation: " + translated))
+            except Exception as exc:
+                self.events.put(("api_test_error", "Cloudflare test failed: " + str(exc)))
+            return
+
         body = json.dumps({
             "model": model,
             "messages": [{"role": "user", "content": "Reply with only the word OK."}],
@@ -1036,7 +1092,60 @@ class HadocSub:
               "then click Start translation again to resume only the remaining lines."
         )
 
+    def request_cloudflare_translation(self, provider, text):
+        body = json.dumps({
+            "text": text,
+            "source_lang": "en",
+            "target_lang": "si",
+        }, ensure_ascii=False).encode("utf-8")
+        request = urllib.request.Request(
+            cloudflare_model_endpoint(provider["url"], provider["model"]),
+            data=body,
+            headers={
+                "Authorization": "Bearer " + provider["key"],
+                "Content-Type": "application/json",
+                "User-Agent": "HADOC-Sub/" + VERSION,
+            },
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=120) as response:
+                data = json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace")[:700]
+            if exc.code == 429:
+                raise RuntimeError("Cloudflare Workers AI quota or rate limit reached. " + detail) from exc
+            if exc.code in (401, 403):
+                raise RuntimeError("Cloudflare token rejected or missing Workers AI permission. " + detail) from exc
+            raise RuntimeError(f"Cloudflare Workers AI returned HTTP {exc.code}: {detail}") from exc
+        except (urllib.error.URLError, TimeoutError) as exc:
+            raise RuntimeError("Cloudflare network or timeout error: " + str(exc)) from exc
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+            raise RuntimeError("Cloudflare returned invalid JSON: " + str(exc)) from exc
+
+        try:
+            return extract_cloudflare_translation(data)
+        except Exception as exc:
+            raise RuntimeError("Could not read Cloudflare translation: " + str(exc)) from exc
+
+    def _translate_cloudflare_item(self, item, provider):
+        index, text = item
+        translated = self.request_cloudflare_translation(provider, text)
+        return index, translated
+
+    def translate_cloudflare_batch(self, batch, provider):
+        # Keep concurrency conservative to respect the provider rate limit while
+        # allowing subtitle lines to translate faster than a fully serial loop.
+        with ThreadPoolExecutor(max_workers=min(4, len(batch))) as executor:
+            pairs = list(executor.map(
+                lambda item: self._translate_cloudflare_item(item, provider), batch
+            ))
+        return dict(pairs)
+
     def translate_batch(self, batch, provider):
+        if provider.get("name") == "Cloudflare Workers AI":
+            return self.translate_cloudflare_batch(batch, provider)
+
         payload = [{"index": index + 1, "text": text} for index, text in batch]
         system = (
             "You are a professional English-to-Sinhala movie subtitle translator. "
