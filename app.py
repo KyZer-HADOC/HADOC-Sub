@@ -423,7 +423,8 @@ class HadocSub:
 
         provider_actions = ctk.CTkFrame(form, fg_color="transparent")
         provider_actions.grid(row=8, column=0, sticky="ew", pady=(0, 13))
-        provider_actions.grid_columnconfigure((0, 1), weight=1)
+        provider_actions.grid_columnconfigure(0, weight=1)
+        provider_actions.grid_columnconfigure(1, weight=1)
         self.make_button(provider_actions, "Test API", self.test_api, height=40).grid(row=0, column=0, sticky="ew", padx=(0, 5))
         self.make_button(provider_actions, "＋ Add to provider pool", self.add_provider, primary=True, height=40).grid(row=0, column=1, sticky="ew", padx=(5, 0))
 
