@@ -24,7 +24,6 @@ Release v1.5.0 Windows build is available from the GitHub Releases page.
 3. The service URL and language pair (`en-US|si-LK`) are filled in automatically. No API key is required.
 4. Optionally enter an email address in the email field to increase the documented free daily allowance from 5,000 to 50,000 characters. You may leave it blank.
 5. Click Test API, then Add to provider pool.
-5. Add other providers one at a time.
 6. Click Save & Start HADOC Sub.
 7. Open an English SRT and click Start translation.
 
