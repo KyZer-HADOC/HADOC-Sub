@@ -20,7 +20,7 @@ from tkinter import filedialog, messagebox, ttk
 
 import customtkinter as ctk
 
-VERSION = "1.5.0"
+VERSION = "1.6.0"
 PROVIDERS = {
     "Google Gemini": {
         "url": "https://generativelanguage.googleapis.com/v1beta/openai",
@@ -46,7 +46,12 @@ PROVIDERS = {
         "url": "https://api.mymemory.translated.net",
         "model": "en-US|si-LK",
     },
+    "Google Translate (Fast)": {
+        "url": "https://translate.googleapis.com/translate_a/t",
+        "model": "en|si",
+    },
 }
+NO_KEY_PROVIDERS = {"MyMemory Translation", "Google Translate (Fast)"}
 BG = "#080d16"
 SIDEBAR = "#0d1420"
 PANEL = "#111b2a"
@@ -176,6 +181,44 @@ def extract_cloudflare_translation(data):
 
 def cloudflare_model_endpoint(base_url, model):
     return base_url.rstrip("/") + "/" + model.lstrip("/")
+
+
+def build_google_translate_url(base_url, texts, source="en", target="si"):
+    params = [
+        ("client", "dict-chrome-ex"),
+        ("sl", source),
+        ("tl", target),
+    ]
+    params.extend(("q", text) for text in texts)
+    return base_url.rstrip("/") + "?" + urllib.parse.urlencode(params)
+
+
+def extract_google_translate_translations(data, expected_count):
+    if not isinstance(data, list):
+        raise ValueError("Google Translate returned an unexpected response.")
+    if len(data) != expected_count:
+        raise ValueError(
+            f"Google Translate returned {len(data)} translations for {expected_count} subtitles."
+        )
+
+    translations = []
+    for row in data:
+        translated = None
+        if isinstance(row, str):
+            translated = row
+        elif isinstance(row, list) and row:
+            if isinstance(row[0], str):
+                translated = row[0]
+            elif isinstance(row[0], list):
+                segments = [
+                    part[0] for part in row[0]
+                    if isinstance(part, list) and part and isinstance(part[0], str)
+                ]
+                translated = "".join(segments)
+        if not isinstance(translated, str) or not translated.strip():
+            raise ValueError("Google Translate returned an empty or unreadable subtitle.")
+        translations.append(translated.strip())
+    return translations
 
 
 def build_mymemory_url(base_url, text, email="", langpair="en-US|si-LK"):
@@ -326,10 +369,12 @@ class HadocSub:
         self.settings_path = Path(os.environ.get("APPDATA", str(Path.home()))) / "HADOC-Sub" / "settings.json"
         self.progress_dir = self.settings_path.parent / "progress"
         self.providers = []
+        self.mymemory_cache = {}
+        self.mymemory_cache_lock = threading.Lock()
 
-        self.provider = tk.StringVar(value="MyMemory Translation")
-        self.api_url = tk.StringVar(value=PROVIDERS["MyMemory Translation"]["url"])
-        self.model = tk.StringVar(value=PROVIDERS["MyMemory Translation"]["model"])
+        self.provider = tk.StringVar(value="Google Translate (Fast)")
+        self.api_url = tk.StringVar(value=PROVIDERS["Google Translate (Fast)"]["url"])
+        self.model = tk.StringVar(value=PROVIDERS["Google Translate (Fast)"]["model"])
         self.api_key = tk.StringVar()
         self.key_visible = False
         self.search_text = tk.StringVar()
@@ -371,7 +416,7 @@ class HadocSub:
                 for item in saved:
                     key = unprotect_secret(item.get("api_key_protected", ""))
                     name = item.get("name", "Custom")
-                    if (key or name == "MyMemory Translation") and item.get("url") and item.get("model"):
+                    if (key or name in NO_KEY_PROVIDERS) and item.get("url") and item.get("model"):
                         self.providers.append({
                             "name": name,
                             "url": item["url"].rstrip("/"),
@@ -388,6 +433,18 @@ class HadocSub:
                         "model": data.get("model", PROVIDERS["Google Gemini"]["model"]),
                         "key": key,
                     })
+            # A MyMemory-only v1.5 installation gets Google Translate as the
+            # fast batched first choice, with the saved MyMemory account as fallback.
+            if (
+                any(item["name"] == "MyMemory Translation" for item in self.providers)
+                and not any(item["name"] == "Google Translate (Fast)" for item in self.providers)
+            ):
+                self.providers.insert(0, {
+                    "name": "Google Translate (Fast)",
+                    "url": PROVIDERS["Google Translate (Fast)"]["url"],
+                    "model": PROVIDERS["Google Translate (Fast)"]["model"],
+                    "key": "",
+                })
             if self.providers:
                 first = self.providers[0]
                 self.provider.set(first["name"])
@@ -490,10 +547,10 @@ class HadocSub:
         self.make_label(title_box, "API PROVIDER POOL" if not first_run else "FIRST-TIME SETUP",
                         MUTED, 10, "bold").pack(anchor="w", pady=(2, 0))
 
-        self.make_label(card, "Choose a translation provider.", TEXT, 23, "bold",
+        self.make_label(card, "Choose a fast translation provider.", TEXT, 23, "bold",
                         anchor="w").grid(row=1, column=0, sticky="ew", padx=32, pady=(10, 4))
         self.make_label(
-            card, "Use dedicated translation services such as MyMemory, or add compatible AI providers. Completed subtitle batches are saved so you can resume later.",
+            card, "Google Translate can translate several subtitle lines in one request. MyMemory is kept as a no-key backup if Google is unavailable.",
             MUTED, 12, anchor="w", wraplength=650, justify="left"
         ).grid(row=2, column=0, sticky="ew", padx=32, pady=(0, 18))
 
@@ -550,7 +607,7 @@ class HadocSub:
         self.render_provider_pool()
 
         self.make_label(
-            form, "API keys are encrypted with Windows DPAPI. MyMemory does not require an API key; an optional email increases its documented daily allowance.",
+            form, "Google Translate Web is an unofficial no-key endpoint and may be rate-limited. MyMemory is the backup; its optional email is stored securely.",
             "#91aa9f", 10, anchor="w", wraplength=650, justify="left"
         ).grid(row=11, column=0, sticky="ew", pady=(0, 9))
 
@@ -575,7 +632,12 @@ class HadocSub:
     def update_provider_field_labels(self, choice):
         if not hasattr(self, "api_key_label"):
             return
-        if choice == "MyMemory Translation":
+        if choice == "Google Translate (Fast)":
+            self.api_url_label.configure(text="GOOGLE TRANSLATE ENDPOINT")
+            self.model_label.configure(text="LANGUAGE PAIR")
+            self.api_key_label.configure(text="API KEY (NOT REQUIRED)")
+            self.setup_key_entry.configure(placeholder_text="No API key needed — leave this blank")
+        elif choice == "MyMemory Translation":
             self.api_url_label.configure(text="TRANSLATION SERVICE URL")
             self.model_label.configure(text="LANGUAGE PAIR")
             self.api_key_label.configure(text="EMAIL (OPTIONAL — 50,000 CHARACTERS/DAY)")
@@ -638,8 +700,8 @@ class HadocSub:
         if not base.startswith("https://") and not base.startswith("http://localhost"):
             messagebox.showwarning("Invalid API URL", "Enter a valid HTTPS API base URL.")
             return
-        if not name or not model or (not key and name != "MyMemory Translation"):
-            messagebox.showwarning("Missing details", "Choose a provider and enter the required details. MyMemory does not require an API key.")
+        if not name or not model or (not key and name not in NO_KEY_PROVIDERS):
+            messagebox.showwarning("Missing details", "Choose a provider and enter the required details. Google Translate and MyMemory do not require API keys.")
             return
         if name == "MyMemory Translation" and key and not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", key):
             messagebox.showwarning("Invalid email", "For MyMemory, the optional field is an email address, not an API key.")
@@ -658,7 +720,15 @@ class HadocSub:
             if name == "MyMemory Translation" and key:
                 existing["key"] = key
                 self.providers.remove(existing)
-                self.providers.insert(0, existing)
+                google_index = next(
+                    (i for i, item in enumerate(self.providers)
+                     if item["name"] == "Google Translate (Fast)"),
+                    None,
+                )
+                if google_index is None:
+                    self.providers.insert(0, existing)
+                else:
+                    self.providers.insert(google_index + 1, existing)
                 self.api_key.set("")
                 self.setup_status.set("MyMemory email updated. Its higher daily allowance will be used.")
                 self.setup_status_label.configure(text=self.setup_status.get(), text_color=GREEN)
@@ -667,8 +737,18 @@ class HadocSub:
             messagebox.showinfo("Already added", "This provider and model are already in your pool.")
             return
         provider_entry = {"name": name, "url": base, "model": model, "key": key}
-        if name == "MyMemory Translation":
+        if name == "Google Translate (Fast)":
             self.providers.insert(0, provider_entry)
+        elif name == "MyMemory Translation":
+            google_index = next(
+                (i for i, item in enumerate(self.providers)
+                 if item["name"] == "Google Translate (Fast)"),
+                None,
+            )
+            if google_index is None:
+                self.providers.insert(0, provider_entry)
+            else:
+                self.providers.insert(google_index + 1, provider_entry)
         else:
             self.providers.append(provider_entry)
         self.api_key.set("")
@@ -693,7 +773,7 @@ class HadocSub:
             item["name"] == name and item["url"] == base and item["model"] == model
             for item in self.providers
         )
-        if self.api_key.get().strip() or (name == "MyMemory Translation" and not already_added):
+        if self.api_key.get().strip() or (name in NO_KEY_PROVIDERS and not already_added):
             self.add_provider()
         if not self.providers:
             messagebox.showwarning("No API providers", "Add at least one API provider before continuing.")
@@ -710,9 +790,9 @@ class HadocSub:
         model = self.model.get().strip()
         key = self.api_key.get().strip()
         provider_name = self.provider.get().strip()
-        needs_key = provider_name != "MyMemory Translation"
+        needs_key = provider_name not in NO_KEY_PROVIDERS
         if not base.startswith("https://") or not model or (needs_key and not key):
-            self.setup_status.set("Enter the service URL and required details. MyMemory needs no API key.")
+            self.setup_status.set("Enter the service URL and required details. Google Translate and MyMemory need no API key.")
             self.setup_status_label.configure(text=self.setup_status.get(), text_color=YELLOW)
             return
         if provider_name == "MyMemory Translation" and key and not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", key):
@@ -728,6 +808,16 @@ class HadocSub:
         threading.Thread(target=self.api_test_worker, args=(base, model, key, provider_name), daemon=True).start()
 
     def api_test_worker(self, base, model, key, provider_name):
+        if provider_name == "Google Translate (Fast)":
+            try:
+                translated = self.request_google_translate_batch(
+                    {"url": base, "model": model}, ["Hello, how are you?"]
+                )[0]
+                self.events.put(("api_test_ok", "Google Translate connected. Test translation: " + translated))
+            except Exception as exc:
+                self.events.put(("api_test_error", "Google Translate test failed: " + str(exc)))
+            return
+
         if provider_name == "MyMemory Translation":
             try:
                 translated = self.request_mymemory_translation({"url": base, "key": key}, "Hello, how are you?")
