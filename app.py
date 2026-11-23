@@ -2150,7 +2150,7 @@ def run_packaged_smoke_test():
     if result.returncode != 0:
         raise RuntimeError("Bundled FFmpeg failed its launch test: " + (result.stderr or "")[-1000:])
 
-    print("HADOC Sub package smoke test passed: icon and FFmpeg extracted successfully.")
+    return None
 
 
 if __name__ == "__main__":

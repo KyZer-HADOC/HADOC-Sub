@@ -88,29 +88,12 @@ jobs:
           python -m PyInstaller --noconfirm --clean --onefile --windowed --optimize 2 --upx-dir "$env:UPX_DIR" --icon icon.ico --add-data "icon.ico;." --collect-all customtkinter --collect-all darkdetect --collect-all imageio_ffmpeg --name HADOC-Sub app.py
           if ($LASTEXITCODE -ne 0) { throw "PyInstaller build failed." }
           $exe = "dist/HADOC-Sub.exe"
-          $beforeOuter = (Get-Item -LiteralPath $exe).Length
-          Write-Host "One-file EXE before final compression: $beforeOuter bytes"
-
-          # Try a final UPX/LZMA pass on the finished one-file executable.
-          # Keep it only when the complete EXE still extracts its icon and FFmpeg.
-          $upxExe = Join-Path $env:UPX_DIR "upx.exe"
-          & $upxExe --best --lzma --no-color $exe
-          if ($LASTEXITCODE -eq 0) {
-            $afterOuter = (Get-Item -LiteralPath $exe).Length
-            Write-Host "One-file EXE after final compression: $afterOuter bytes"
-            & $exe --smoke-test
-            if ($LASTEXITCODE -ne 0) {
-              Write-Warning "Final EXE compression failed its extraction smoke test. Restoring the uncompressed EXE."
-              & $upxExe -d $exe
-              if ($LASTEXITCODE -ne 0) { throw "Could not restore EXE after failed compression test." }
-              & $exe --smoke-test
-              if ($LASTEXITCODE -ne 0) { throw "Uncompressed EXE also failed its extraction smoke test." }
-            }
-          } else {
-            Write-Warning "UPX final EXE compression was not supported; retaining the PyInstaller build."
-            & $exe --smoke-test
-            if ($LASTEXITCODE -ne 0) { throw "EXE extraction smoke test failed." }
-          }
+          # Keep the Windows Control Flow Guard (GUARD_CF) protection intact.
+          # PyInstaller already applies UPX/LZMA to eligible inner binaries and FFmpeg.
+          # Run the finished one-file EXE in diagnostic mode to verify full extraction.
+          & $exe --smoke-test
+          if ($LASTEXITCODE -ne 0) { throw "EXE extraction smoke test failed." }
+          Write-Host "One-file EXE extraction smoke test passed."
 
           $size = (Get-Item -LiteralPath $exe).Length
           $hash = (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant()

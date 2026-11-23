@@ -26,6 +26,8 @@ if %errorlevel%==0 (
 )
 
 if errorlevel 1 goto failed
+dist\HADOC-Sub.exe --smoke-test
+if errorlevel 1 goto failed
 echo.
 echo Build successful: dist\HADOC-Sub.exe
 pause
