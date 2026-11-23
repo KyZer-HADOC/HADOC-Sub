@@ -24,7 +24,7 @@ from tkinter import filedialog, messagebox, ttk
 
 import customtkinter as ctk
 
-VERSION = "1.7.3"
+VERSION = "1.7.4"
 
 def resource_path(relative_path):
     """Return an asset path for both normal Python and PyInstaller one-file builds."""
@@ -2126,5 +2126,35 @@ def main():
     root.mainloop()
 
 
+def run_packaged_smoke_test():
+    """Verify one-file extraction, the bundled app icon, and FFmpeg launch."""
+    icon_path = resource_path("icon.ico")
+    if not icon_path.is_file():
+        raise RuntimeError(f"Bundled app icon is missing: {icon_path}")
+
+    import imageio_ffmpeg
+
+    ffmpeg_path = imageio_ffmpeg.get_ffmpeg_exe()
+    if not Path(ffmpeg_path).is_file():
+        raise RuntimeError(f"Bundled FFmpeg is missing: {ffmpeg_path}")
+
+    result = subprocess.run(
+        [ffmpeg_path, "-version"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=30,
+    )
+    if result.returncode != 0:
+        raise RuntimeError("Bundled FFmpeg failed its launch test: " + (result.stderr or "")[-1000:])
+
+    print("HADOC Sub package smoke test passed: icon and FFmpeg extracted successfully.")
+
+
 if __name__ == "__main__":
-    main()
+    if "--smoke-test" in sys.argv:
+        run_packaged_smoke_test()
+    else:
+        main()

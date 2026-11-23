@@ -2,9 +2,9 @@
 
 HADOC Sub is a Windows desktop subtitle studio that can generate subtitles directly from videos and translate English SRT files into Sinhala.
 
-## Version 1.7.3
+## Version 1.7.4
 
-Version 1.7.3 adds the HADOC Sub application icon to the Windows EXE, application window, and taskbar. The icon is generated from the repository-root icon.jpg during the build. UPX/LZMA FFmpeg compression, FLAC uploads, and automatic retry improvements are retained. Version 1.7.0 added automatic video-to-subtitle generation using Groq Whisper, bundled FFmpeg audio extraction, timestamped English SRT export, and automatic Sinhala translation. Existing SRT translation, provider failover, and checkpoint/resume are preserved.
+Version 1.7.4 keeps the repository-root icon.jpg embedded as the EXE, window, and taskbar icon. The finished one-file EXE now gets an additional UPX/LZMA compression pass, followed by an extraction smoke test that verifies both the ICO resource and FFmpeg. If outer compression fails the smoke test, the build automatically restores and tests the safe uncompressed executable. UPX/LZMA FFmpeg compression and FLAC upload retries are retained. Version 1.7.0 added automatic video-to-subtitle generation using Groq Whisper, bundled FFmpeg audio extraction, timestamped English SRT export, and automatic Sinhala translation. Existing SRT translation, provider failover, and checkpoint/resume are preserved.
 
 ### Generate Sinhala subtitles from a video
 
@@ -20,7 +20,7 @@ Video transcription currently expects English speech. A Groq API key is required
 
 This release adds batched Google Translate Web requests as the fast first-choice translator, automatically adds MyMemory as a no-API-key fallback, and caches repeated MyMemory subtitle lines during the session.
 MyMemory is automatically added as a backup provider when Google Translate is selected.
-The optimized v1.7.3 Windows build is available from the GitHub Releases page.
+The optimized v1.7.4 Windows build is available from the GitHub Releases page.
 
 - Modern dark Windows desktop interface with maximized launch and F11 fullscreen.
 - First-run API setup with encrypted provider credentials.

@@ -1,5 +1,5 @@
 name: Build HADOC Sub for Windows
-# Version 1.7.3 — UPX-optimized Windows release
+# Version 1.7.4 — UPX-optimized Windows release
 
 on:
   push:
@@ -15,7 +15,7 @@ on:
       release_tag:
         description: Release tag (for example v1.0.0)
         required: false
-        default: v1.7.3
+        default: v1.7.4
         type: string
 
 permissions:
@@ -88,6 +88,30 @@ jobs:
           python -m PyInstaller --noconfirm --clean --onefile --windowed --optimize 2 --upx-dir "$env:UPX_DIR" --icon icon.ico --add-data "icon.ico;." --collect-all customtkinter --collect-all darkdetect --collect-all imageio_ffmpeg --name HADOC-Sub app.py
           if ($LASTEXITCODE -ne 0) { throw "PyInstaller build failed." }
           $exe = "dist/HADOC-Sub.exe"
+          $beforeOuter = (Get-Item -LiteralPath $exe).Length
+          Write-Host "One-file EXE before final compression: $beforeOuter bytes"
+
+          # Try a final UPX/LZMA pass on the finished one-file executable.
+          # Keep it only when the complete EXE still extracts its icon and FFmpeg.
+          $upxExe = Join-Path $env:UPX_DIR "upx.exe"
+          & $upxExe --best --lzma --no-color $exe
+          if ($LASTEXITCODE -eq 0) {
+            $afterOuter = (Get-Item -LiteralPath $exe).Length
+            Write-Host "One-file EXE after final compression: $afterOuter bytes"
+            & $exe --smoke-test
+            if ($LASTEXITCODE -ne 0) {
+              Write-Warning "Final EXE compression failed its extraction smoke test. Restoring the uncompressed EXE."
+              & $upxExe -d $exe
+              if ($LASTEXITCODE -ne 0) { throw "Could not restore EXE after failed compression test." }
+              & $exe --smoke-test
+              if ($LASTEXITCODE -ne 0) { throw "Uncompressed EXE also failed its extraction smoke test." }
+            }
+          } else {
+            Write-Warning "UPX final EXE compression was not supported; retaining the PyInstaller build."
+            & $exe --smoke-test
+            if ($LASTEXITCODE -ne 0) { throw "EXE extraction smoke test failed." }
+          }
+
           $size = (Get-Item -LiteralPath $exe).Length
           $hash = (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant()
           Write-Host "HADOC-Sub.exe size: $size bytes"
@@ -97,7 +121,7 @@ jobs:
       - name: Upload Windows application artifact
         uses: actions/upload-artifact@v4
         with:
-          name: HADOC-Sub-Windows-v1.7.3
+          name: HADOC-Sub-Windows-v1.7.4
           path: |
             dist/HADOC-Sub.exe
             dist/HADOC-Sub.exe.sha256
@@ -108,8 +132,8 @@ jobs:
         if: (github.event_name == 'workflow_dispatch' && inputs.publish_release == true) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[publish-release]'))
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ inputs.release_tag || 'v1.7.3' }}
-          name: HADOC Sub ${{ inputs.release_tag || 'v1.7.3' }}
+          tag_name: ${{ inputs.release_tag || 'v1.7.4' }}
+          name: HADOC Sub ${{ inputs.release_tag || 'v1.7.4' }}
           target_commitish: ${{ github.sha }}
           files: |
             dist/HADOC-Sub.exe
