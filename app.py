@@ -8,6 +8,7 @@ import os
 import queue
 import re
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -23,7 +24,13 @@ from tkinter import filedialog, messagebox, ttk
 
 import customtkinter as ctk
 
-VERSION = "1.7.2"
+VERSION = "1.7.3"
+
+def resource_path(relative_path):
+    """Return an asset path for both normal Python and PyInstaller one-file builds."""
+    bundle_dir = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
+    return bundle_dir / relative_path
+
 PROVIDERS = {
     "Google Gemini": {
         "url": "https://generativelanguage.googleapis.com/v1beta/openai",
@@ -392,6 +399,10 @@ class HadocSub:
         ctk.set_appearance_mode("dark")
         ctk.set_default_color_theme("dark-blue")
         self.root.title("HADOC Sub")
+        try:
+            self.root.iconbitmap(default=str(resource_path("icon.ico")))
+        except (tk.TclError, OSError):
+            pass
         self.root.configure(fg_color=BG)
         self.root.minsize(1100, 700)
         try:
