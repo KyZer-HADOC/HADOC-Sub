@@ -1294,8 +1294,8 @@ class HadocSub:
             ffmpeg, "-hide_banner", "-loglevel", "error", "-y",
             "-ss", f"{start_seconds:.3f}", "-i", video_path,
             "-t", f"{duration_seconds:.3f}", "-map", "0:a:0", "-vn",
-            "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", "-f", "wav",
-            output_path,
+            "-ac", "1", "-ar", "16000", "-c:a", "flac",
+            "-compression_level", "5", "-f", "flac", output_path,
         ]
         result = subprocess.run(
             command, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -1312,6 +1312,8 @@ class HadocSub:
             )
 
     def request_groq_transcription(self, audio_path, api_key):
+        # Build the multipart body once; retry the same small compressed FLAC
+        # upload if a mobile connection drops during TLS or HTTP transfer.
         boundary = "----HADOCSub" + uuid.uuid4().hex
         pieces = []
 
@@ -1329,41 +1331,60 @@ class HadocSub:
         add_field("timestamp_granularities[]", "segment")
 
         filename = Path(audio_path).name
+        content_type = "audio/flac" if filename.lower().endswith(".flac") else "audio/wav"
         with open(audio_path, "rb") as stream:
             audio_data = stream.read()
         pieces.append(
             f"--{boundary}\r\n"
             f'Content-Disposition: form-data; name="file"; filename="{filename}"\r\n'
-            "Content-Type: audio/wav\r\n\r\n".encode("utf-8")
+            f"Content-Type: {content_type}\r\n\r\n".encode("utf-8")
             + audio_data + b"\r\n"
         )
         pieces.append(f"--{boundary}--\r\n".encode("ascii"))
         body = b"".join(pieces)
-        request = urllib.request.Request(
-            "https://api.groq.com/openai/v1/audio/transcriptions",
-            data=body,
-            headers={
-                "Authorization": "Bearer " + api_key,
-                "Content-Type": "multipart/form-data; boundary=" + boundary,
-                "Accept": "application/json",
-                "User-Agent": "HADOC-Sub/" + VERSION,
-            },
-            method="POST",
-        )
-        try:
-            with urllib.request.urlopen(request, timeout=300) as response:
-                data = json.loads(response.read().decode("utf-8"))
-        except urllib.error.HTTPError as exc:
-            detail = exc.read().decode("utf-8", errors="replace")[:1000]
-            if exc.code == 429:
-                raise RuntimeError("Groq Whisper rate limit or daily quota reached. " + detail) from exc
-            if exc.code in (401, 403):
-                raise RuntimeError("Groq rejected the API key or Whisper access. " + detail) from exc
-            raise RuntimeError(f"Groq Whisper returned HTTP {exc.code}: {detail}") from exc
-        except (urllib.error.URLError, TimeoutError) as exc:
-            raise RuntimeError("Groq Whisper network or timeout error: " + str(exc)) from exc
-        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
-            raise RuntimeError("Groq Whisper returned invalid JSON: " + str(exc)) from exc
+
+        data = None
+        last_error = None
+        max_attempts = 4
+        for attempt in range(max_attempts):
+            request = urllib.request.Request(
+                "https://api.groq.com/openai/v1/audio/transcriptions",
+                data=body,
+                headers={
+                    "Authorization": "Bearer " + api_key,
+                    "Content-Type": "multipart/form-data; boundary=" + boundary,
+                    "Accept": "application/json",
+                    "Connection": "close",
+                    "User-Agent": "HADOC-Sub/" + VERSION,
+                },
+                method="POST",
+            )
+            try:
+                with urllib.request.urlopen(request, timeout=300) as response:
+                    data = json.loads(response.read().decode("utf-8"))
+                break
+            except urllib.error.HTTPError as exc:
+                detail = exc.read().decode("utf-8", errors="replace")[:1000]
+                if exc.code == 429:
+                    raise RuntimeError("Groq Whisper rate limit or daily quota reached. " + detail) from exc
+                if exc.code in (401, 403):
+                    raise RuntimeError("Groq rejected the API key or Whisper access. " + detail) from exc
+                if exc.code not in (408, 425, 500, 502, 503, 504) or attempt == max_attempts - 1:
+                    raise RuntimeError(f"Groq Whisper returned HTTP {exc.code}: {detail}") from exc
+                last_error = exc
+            except (urllib.error.URLError, TimeoutError, ConnectionError, OSError) as exc:
+                if attempt == max_attempts - 1:
+                    raise RuntimeError(
+                        f"Groq Whisper upload connection failed after {max_attempts} attempts. "
+                        "The connection to Groq was interrupted. Try again on a more stable connection. "
+                        + str(exc)
+                    ) from exc
+                last_error = exc
+
+            # Increasing pauses allow a mobile or Wi-Fi connection to recover.
+            time.sleep(2 * (attempt + 1))
+        else:
+            raise RuntimeError("Groq Whisper upload failed after retries: " + str(last_error))
 
         segments = data.get("segments") if isinstance(data, dict) else None
         if not isinstance(segments, list):
@@ -1406,7 +1427,7 @@ class HadocSub:
                 for chunk_index in range(chunk_count):
                     start = chunk_index * chunk_seconds
                     length = min(chunk_seconds, total_seconds - start)
-                    audio_path = os.path.join(temp_dir, f"audio_{chunk_index + 1:04}.wav")
+                    audio_path = os.path.join(temp_dir, f"audio_{chunk_index + 1:04}.flac")
                     self.events.put((
                         "video_progress", chunk_index, chunk_count,
                         f"Extracting audio {chunk_index + 1}/{chunk_count}…",
