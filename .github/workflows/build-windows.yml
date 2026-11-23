@@ -1,5 +1,5 @@
 name: Build HADOC Sub for Windows
-# Version 1.7.1 — video-to-Sinhala subtitles with Groq Whisper [release build]
+# Version 1.7.2 — UPX-optimized Windows release
 
 on:
   push:
@@ -15,7 +15,7 @@ on:
       release_tag:
         description: Release tag (for example v1.0.0)
         required: false
-        default: v1.7.1
+        default: v1.7.2
         type: string
 
 permissions:
@@ -33,20 +33,71 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Install verified UPX compressor
+        shell: pwsh
+        run: |
+          $version = "5.3.0"
+          $zipPath = Join-Path $env:RUNNER_TEMP "upx-$version-win64.zip"
+          $extractPath = Join-Path $env:RUNNER_TEMP "upx"
+          $url = "https://github.com/upx/upx/releases/download/v$version/upx-$version-win64.zip"
+          Invoke-WebRequest -Uri $url -OutFile $zipPath
+          $expectedHash = "d127996c76615e431be810e9c8d2910dbe3dd40060061c0c50276fc5a17a9705"
+          $actualHash = (Get-FileHash -Path $zipPath -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actualHash -ne $expectedHash) {
+            throw "UPX archive SHA256 verification failed."
+          }
+          Expand-Archive -LiteralPath $zipPath -DestinationPath $extractPath -Force
+          $upx = Get-ChildItem -Path $extractPath -Filter upx.exe -File -Recurse | Select-Object -First 1
+          if (-not $upx) { throw "UPX executable was not found after extraction." }
+          "UPX_DIR=$($upx.DirectoryName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          & $upx.FullName --version
+
       - name: Run SRT parser tests and syntax checks
         run: |
+          python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
           python -m py_compile app.py
           python -m unittest discover -s tests -v
 
+      - name: Compress and validate bundled FFmpeg
+        shell: pwsh
+        run: |
+          $ffmpeg = (python -c "import imageio_ffmpeg; print(imageio_ffmpeg.get_ffmpeg_exe())").Trim()
+          if (-not (Test-Path -LiteralPath $ffmpeg)) {
+            throw "imageio-ffmpeg binary was not found: $ffmpeg"
+          }
+          $before = (Get-Item -LiteralPath $ffmpeg).Length
+          & (Join-Path $env:UPX_DIR "upx.exe") --best --lzma --no-color $ffmpeg
+          if ($LASTEXITCODE -ne 0) {
+            Write-Warning "UPX could not compress FFmpeg; continuing with the original binary."
+          }
+          $after = (Get-Item -LiteralPath $ffmpeg).Length
+          Write-Host "FFmpeg size before UPX: $before bytes"
+          Write-Host "FFmpeg size after UPX:  $after bytes"
+          & $ffmpeg -version
+          if ($LASTEXITCODE -ne 0) {
+            throw "The FFmpeg binary failed its post-compression launch check."
+          }
+
       - name: Build standalone EXE
-        run: pyinstaller --noconfirm --clean --onefile --windowed --collect-all customtkinter --collect-all darkdetect --collect-all imageio_ffmpeg --name HADOC-Sub app.py
+        shell: pwsh
+        run: |
+          python -m PyInstaller --noconfirm --clean --onefile --windowed --optimize 2 --upx-dir "$env:UPX_DIR" --collect-all customtkinter --collect-all darkdetect --collect-all imageio_ffmpeg --name HADOC-Sub app.py
+          if ($LASTEXITCODE -ne 0) { throw "PyInstaller build failed." }
+          $exe = "dist/HADOC-Sub.exe"
+          $size = (Get-Item -LiteralPath $exe).Length
+          $hash = (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          Write-Host "HADOC-Sub.exe size: $size bytes"
+          Write-Host "HADOC-Sub.exe SHA256: $hash"
+          "$hash  HADOC-Sub.exe" | Out-File -FilePath "dist/HADOC-Sub.exe.sha256" -Encoding ascii
 
       - name: Upload Windows application artifact
         uses: actions/upload-artifact@v4
         with:
-          name: HADOC-Sub-Windows
-          path: dist/HADOC-Sub.exe
+          name: HADOC-Sub-Windows-v1.7.2
+          path: |
+            dist/HADOC-Sub.exe
+            dist/HADOC-Sub.exe.sha256
           if-no-files-found: error
           retention-days: 30
 
@@ -54,10 +105,12 @@ jobs:
         if: (github.event_name == 'workflow_dispatch' && inputs.publish_release == true) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[publish-release]'))
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ inputs.release_tag || 'v1.7.1' }}
-          name: HADOC Sub ${{ inputs.release_tag || 'v1.7.1' }}
+          tag_name: ${{ inputs.release_tag || 'v1.7.2' }}
+          name: HADOC Sub ${{ inputs.release_tag || 'v1.7.2' }}
           target_commitish: ${{ github.sha }}
-          files: dist/HADOC-Sub.exe
+          files: |
+            dist/HADOC-Sub.exe
+            dist/HADOC-Sub.exe.sha256
           generate_release_notes: true
           draft: false
           prerelease: false
