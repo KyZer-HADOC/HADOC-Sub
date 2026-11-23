@@ -41,7 +41,7 @@ jobs:
           $extractPath = Join-Path $env:RUNNER_TEMP "upx"
           $url = "https://github.com/upx/upx/releases/download/v$version/upx-$version-win64.zip"
           Invoke-WebRequest -Uri $url -OutFile $zipPath
-          $expectedHash = "d127996c76615e431be810e9c8d2910dbe3dd40060061c0c50276fc5a17a9705"
+          $expectedHash = "d127996c76615e431be810e9c8d2910dbe3dd400600c5c0c50276fc5a17a9705"
           $actualHash = (Get-FileHash -Path $zipPath -Algorithm SHA256).Hash.ToLowerInvariant()
           if ($actualHash -ne $expectedHash) {
             throw "UPX archive SHA256 verification failed."
