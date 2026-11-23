@@ -2,9 +2,9 @@
 
 HADOC Sub is a Windows desktop subtitle studio that can generate subtitles directly from videos and translate English SRT files into Sinhala.
 
-## Version 1.7.0
+## Version 1.7.1
 
-Version 1.7.0 adds automatic video-to-subtitle generation using Groq Whisper, bundled FFmpeg audio extraction, timestamped English SRT export, and automatic Sinhala translation. Existing SRT translation, provider failover, and checkpoint/resume are preserved.
+Version 1.7.1 improves Groq Whisper uploads by extracting compact FLAC audio and retrying temporary connection/TLS failures. Version 1.7.0 added automatic video-to-subtitle generation using Groq Whisper, bundled FFmpeg audio extraction, timestamped English SRT export, and automatic Sinhala translation. Existing SRT translation, provider failover, and checkpoint/resume are preserved.
 
 ### Generate Sinhala subtitles from a video
 
@@ -14,7 +14,7 @@ Version 1.7.0 adds automatic video-to-subtitle generation using Groq Whisper, bu
 4. Click **Generate Sinhala Subtitles**. HADOC Sub extracts audio with its bundled FFmpeg, transcribes it with Groq Whisper in short audio chunks, creates timestamped English captions, then starts the existing English-to-Sinhala translation automatically.
 5. The English transcript is saved beside the video as `<video>_en.srt`. After review, click **Save SRT** to export `<video>_si.srt`.
 
-Video transcription currently expects English speech. A Groq API key is required; the transcription request is subject to the current limits and pricing of your Groq account. For the free tier, HADOC Sub uses 8-minute mono 16 kHz WAV chunks designed to remain below the documented 25 MB upload limit. The app resumes translation from its saved checkpoint if interrupted. Video audio is uploaded to Groq for transcription; it is not processed entirely offline.
+Video transcription currently expects English speech. A Groq API key is required; the transcription request is subject to the current limits and pricing of your Groq account. For the free tier, HADOC Sub uses 8-minute mono 16 kHz FLAC chunks to keep upload sizes much smaller than WAV and below the documented 25 MB upload limit in typical use. Temporary connection failures are retried automatically. The app resumes translation from its saved checkpoint if interrupted. Video audio is uploaded to Groq for transcription; it is not processed entirely offline.
 
 
 
