@@ -24,7 +24,18 @@ from tkinter import filedialog, messagebox, ttk
 
 import customtkinter as ctk
 
-VERSION = "1.7.4"
+VERSION = "1.7.5"
+
+VIDEO_FILE_EXTENSIONS = (
+    ".mp4", ".mkv", ".avi", ".mov", ".m4v", ".webm", ".wmv", ".flv",
+)
+CONTEXT_MENU_EXTENSIONS = (".srt",) + VIDEO_FILE_EXTENSIONS
+
+
+def build_context_menu_command(executable_path):
+    """Build a quoted Explorer command that passes the selected file to HADOC Sub."""
+    return f'"{Path(executable_path)}" --open "%1"'
+
 
 def resource_path(relative_path):
     """Return an asset path for both normal Python and PyInstaller one-file builds."""
@@ -394,8 +405,9 @@ def unprotect_secret(encoded):
 
 
 class HadocSub:
-    def __init__(self, root):
+    def __init__(self, root, launch_path=None):
         self.root = root
+        self.pending_open_path = Path(launch_path).expanduser() if launch_path else None
         ctk.set_appearance_mode("dark")
         ctk.set_default_color_theme("dark-blue")
         self.root.title("HADOC Sub")
@@ -872,58 +884,34 @@ class HadocSub:
         threading.Thread(target=self.api_test_worker, args=(base, model, key, provider_name), daemon=True).start()
 
     def api_test_worker(self, base, model, key, provider_name):
-        if provider_name == "Google Translate (Fast)":
-            try:
-                original = "Hello, how are you?"
-                translated = self.request_google_translate_batch(
-                    {"url": base, "model": model}, [original]
-                )[0]
-                if translated.strip().casefold() == original.casefold():
-                    raise RuntimeError(
-                        "The endpoint returned the original English text. Check that the target language is Sinhala (si)."
-                    )
-                self.events.put(("api_test_ok", "Google Translate connected. Test translation: " + translated))
-            except Exception as exc:
-                self.events.put(("api_test_error", "Google Translate test failed: " + str(exc)))
-            return
-
-        if provider_name == "MyMemory Translation":
-            try:
-                translated = self.request_mymemory_translation({"url": base, "key": key}, "Hello, how are you?")
-                self.events.put(("api_test_ok", "MyMemory connected. Test translation: " + translated))
-            except Exception as exc:
-                self.events.put(("api_test_error", "MyMemory test failed: " + str(exc)))
-            return
-
-        if provider_name == "Cloudflare Workers AI":
-            provider = {"url": base, "model": model, "key": key}
-            try:
-                translated = self.request_cloudflare_translation(provider, "Hello, how are you?")
-                self.events.put(("api_test_ok", "Cloudflare connection successful. Test translation: " + translated))
-            except Exception as exc:
-                self.events.put(("api_test_error", "Cloudflare test failed: " + str(exc)))
-            return
-
-        body = json.dumps({
+        """Test the same translation path used by real subtitle batches."""
+        provider = {
+            "name": provider_name,
+            "url": base,
             "model": model,
-            "messages": [{"role": "user", "content": "Reply with only the word OK."}],
-        }).encode("utf-8")
-        request = urllib.request.Request(
-            base + "/chat/completions", data=body,
-            headers={"Authorization": "Bearer " + key, "Content-Type": "application/json"},
-            method="POST"
-        )
+            "key": key,
+        }
+        sample_text = "Hello! I will see you tomorrow."
         try:
-            with urllib.request.urlopen(request, timeout=45) as response:
-                data = json.loads(response.read().decode("utf-8"))
-            if not data.get("choices"):
-                raise RuntimeError("Provider returned an unexpected response.")
-            self.events.put(("api_test_ok", "Connection successful. Your API is ready."))
-        except urllib.error.HTTPError as exc:
-            detail = exc.read().decode("utf-8", errors="replace")[:350]
-            self.events.put(("api_test_error", f"API error {exc.code}: {detail}"))
+            result = self.translate_batch([(0, sample_text)], provider)
+            translated = result.get(0, "") if isinstance(result, dict) else ""
+            translated = str(translated).strip()
+            if not translated:
+                raise RuntimeError("The provider returned an empty translation.")
+            if translated.casefold() == sample_text.casefold():
+                raise RuntimeError(
+                    "The provider returned the original English text instead of Sinhala. "
+                    "Check the target language and model."
+                )
+            self.events.put((
+                "api_test_ok",
+                f"{provider_name} passed. Test translation: {translated[:180]}",
+            ))
         except Exception as exc:
-            self.events.put(("api_test_error", "Connection failed: " + str(exc)))
+            self.events.put((
+                "api_test_error",
+                f"{provider_name} test failed: {str(exc)[:650]}",
+            ))
 
     def show_main(self):
         self.on_setup_screen = False
@@ -954,6 +942,15 @@ class HadocSub:
         self.make_label(sidebar, "WORKSPACE", "#64758d", 9, "bold").pack(anchor="w", padx=22, pady=(0, 10))
         self.make_button(sidebar, "▤    SRT Translator", lambda: None, primary=True, height=43).pack(fill="x", padx=14, pady=4)
         self.make_button(sidebar, "⚙    API Settings", self.open_settings, height=43).pack(fill="x", padx=14, pady=4)
+        self.make_button(
+            sidebar, "↪  Install File Explorer menu",
+            self.install_explorer_context_menu, height=39
+        ).pack(fill="x", padx=14, pady=(10, 4))
+        self.make_button(
+            sidebar, "Remove right-click option",
+            self.remove_explorer_context_menu, height=34,
+            fg_color="#3a2631", hover_color="#5a3040"
+        ).pack(fill="x", padx=14, pady=3)
 
         spacer = ctk.CTkFrame(sidebar, fg_color="transparent")
         spacer.pack(fill="both", expand=True)
@@ -1066,6 +1063,8 @@ class HadocSub:
 
         self.refresh_table()
         self.update_stats_cards()
+        if self.pending_open_path:
+            self.root.after(350, self.open_pending_path)
 
     def stat_card(self, parent, column, title, value, caption):
         card = ctk.CTkFrame(parent, fg_color=PANEL, corner_radius=13, border_width=1, border_color=BORDER, height=88)
@@ -1192,21 +1191,29 @@ class HadocSub:
             title="Open English SRT",
             filetypes=[("SubRip subtitle", "*.srt"), ("Text files", "*.txt"), ("All files", "*.*")]
         )
-        if not name:
+        if name:
+            self.load_subtitle_file(name)
+
+    def load_subtitle_file(self, name, auto_start=False):
+        if self.busy:
+            return
+        path = Path(name).expanduser()
+        if not path.is_file():
+            messagebox.showerror("Could not open subtitle", f"File not found:\n{path}")
             return
         self.video_path = None
         if hasattr(self, "generate_button"):
             self.generate_button.configure(state="disabled")
         try:
             try:
-                raw = Path(name).read_text(encoding="utf-8-sig")
+                raw = path.read_text(encoding="utf-8-sig")
             except UnicodeDecodeError:
-                raw = Path(name).read_text(encoding="cp1252")
+                raw = path.read_text(encoding="cp1252")
             self.items = parse_srt(raw)
         except Exception as exc:
             messagebox.showerror("Could not open subtitle", str(exc))
             return
-        self.source_path = Path(name)
+        self.source_path = path
         try:
             self.source_fingerprint = source_fingerprint(self.source_path)
         except OSError as exc:
@@ -1228,6 +1235,8 @@ class HadocSub:
             )
         else:
             self.set_status(f"Loaded {len(self.items):,} subtitle entries", "success")
+        if auto_start:
+            self.root.after(500, self.start_translation)
 
     def open_video(self):
         if self.busy:
@@ -1239,9 +1248,16 @@ class HadocSub:
                 ("All files", "*.*"),
             ],
         )
-        if not name:
+        if name:
+            self.load_video_file(name)
+
+    def load_video_file(self, name, auto_start=False):
+        if self.busy:
             return
-        path = Path(name)
+        path = Path(name).expanduser()
+        if not path.is_file():
+            messagebox.showerror("Could not read video", f"File not found:\n{path}")
+            return
         try:
             fingerprint = media_fingerprint(path)
         except OSError as exc:
@@ -1263,6 +1279,95 @@ class HadocSub:
             self.set_status("Video selected. Click Generate Sinhala Subtitles.", "success")
         if hasattr(self, "generate_button"):
             self.generate_button.configure(state="normal")
+        if auto_start:
+            self.root.after(650, self.start_video_generation)
+
+    def open_pending_path(self):
+        path = self.pending_open_path
+        self.pending_open_path = None
+        if path is None:
+            return
+        extension = path.suffix.lower()
+        if extension == ".srt":
+            self.load_subtitle_file(path, auto_start=True)
+        elif extension in VIDEO_FILE_EXTENSIONS:
+            self.load_video_file(path, auto_start=True)
+        else:
+            messagebox.showwarning(
+                "Unsupported file",
+                "HADOC Sub supports .srt subtitles and common video formats (MP4, MKV, AVI, MOV, M4V, WEBM, WMV, FLV)."
+            )
+
+    @staticmethod
+    def _context_menu_registry_paths():
+        return [
+            rf"Software\Classes\SystemFileAssociations\{extension}\shell\HADOCSubTranslate"
+            for extension in CONTEXT_MENU_EXTENSIONS
+        ]
+
+    def install_explorer_context_menu(self):
+        if os.name != "nt":
+            messagebox.showwarning("Windows only", "The File Explorer right-click menu is available on Windows.")
+            return
+        import winreg
+
+        executable = Path(sys.executable).resolve()
+        command = build_context_menu_command(executable)
+        try:
+            for key_path in self._context_menu_registry_paths():
+                with winreg.CreateKeyEx(
+                    winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_WRITE
+                ) as verb_key:
+                    winreg.SetValueEx(verb_key, "MUIVerb", 0, winreg.REG_SZ, "Translate via HADOC Sub")
+                    winreg.SetValueEx(verb_key, "Icon", 0, winreg.REG_SZ, f'"{executable}",0')
+                with winreg.CreateKeyEx(
+                    winreg.HKEY_CURRENT_USER, key_path + r"\command", 0, winreg.KEY_WRITE
+                ) as command_key:
+                    winreg.SetValueEx(command_key, None, 0, winreg.REG_SZ, command)
+            try:
+                import ctypes
+                ctypes.windll.shell32.SHChangeNotify(0x08000000, 0, None, None)
+            except Exception:
+                pass
+        except OSError as exc:
+            messagebox.showerror("Could not install right-click option", str(exc))
+            return
+        messagebox.showinfo(
+            "File Explorer option installed",
+            "Translate via HADOC Sub is now available for SRT and supported video files.\n\n"
+            "On Windows 11, it may appear under Show more options."
+        )
+
+    def remove_explorer_context_menu(self):
+        if os.name != "nt":
+            messagebox.showwarning("Windows only", "The File Explorer right-click menu is available on Windows.")
+            return
+        import winreg
+
+        removed = 0
+        for key_path in self._context_menu_registry_paths():
+            try:
+                winreg.DeleteKey(
+                    winreg.HKEY_CURRENT_USER, key_path + r"\command"
+                )
+            except FileNotFoundError:
+                pass
+            try:
+                winreg.DeleteKey(winreg.HKEY_CURRENT_USER, key_path)
+                removed += 1
+            except FileNotFoundError:
+                pass
+            except OSError:
+                pass
+        try:
+            import ctypes
+            ctypes.windll.shell32.SHChangeNotify(0x08000000, 0, None, None)
+        except Exception:
+            pass
+        messagebox.showinfo(
+            "File Explorer option removed",
+            f"Removed HADOC Sub right-click entries for {removed} file types."
+        )
 
     def find_groq_transcription_key(self):
         for provider in self.providers:
@@ -1972,12 +2077,20 @@ class HadocSub:
                 kind = event[0]
                 if kind == "api_test_ok":
                     self.setup_status.set(event[1])
-                    if self.on_setup_screen and hasattr(self, "setup_status_label"):
+                    if (
+                        self.on_setup_screen
+                        and hasattr(self, "setup_status_label")
+                        and self.setup_status_label.winfo_exists()
+                    ):
                         self.setup_status_label.configure(text=event[1], text_color=GREEN)
                 elif kind == "api_test_error":
                     self.setup_status.set(event[1])
-                    if hasattr(self, "setup_status_label") and self.setup_status_label.winfo_exists():
-                        self.setup_status_label.configure(text=event[1], text_color=YELLOW)
+                    if (
+                        self.on_setup_screen
+                        and hasattr(self, "setup_status_label")
+                        and self.setup_status_label.winfo_exists()
+                    ):
+                        self.setup_status_label.configure(text=event[1], text_color="#ff8a8a")
                 elif kind == "video_progress":
                     _, completed, total, detail = event
                     pct = round(completed * 100 / total) if total else 0
@@ -2121,8 +2234,13 @@ class HadocSub:
 
 
 def main():
+    launch_path = None
+    if "--open" in sys.argv:
+        argument_index = sys.argv.index("--open")
+        if argument_index + 1 < len(sys.argv):
+            launch_path = sys.argv[argument_index + 1]
     root = ctk.CTk()
-    HadocSub(root)
+    HadocSub(root, launch_path=launch_path)
     root.mainloop()
 
 

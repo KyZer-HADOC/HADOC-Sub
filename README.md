@@ -2,9 +2,9 @@
 
 HADOC Sub is a Windows desktop subtitle studio that can generate subtitles directly from videos and translate English SRT files into Sinhala.
 
-## Version 1.7.4
+## Version 1.7.5
 
-Version 1.7.4 keeps the repository-root icon.jpg embedded as the EXE, window, and taskbar icon. The Windows build now runs a post-build one-file extraction smoke test that verifies the ICO resource and bundled FFmpeg can be extracted and FFmpeg can launch. UPX/LZMA compression remains enabled for eligible inner binaries and FFmpeg while Windows Control Flow Guard protection is preserved. Version 1.7.0 added automatic video-to-subtitle generation using Groq Whisper, bundled FFmpeg audio extraction, timestamped English SRT export, and automatic Sinhala translation. Existing SRT translation, provider failover, and checkpoint/resume are preserved.
+Version 1.7.5 fixes Test API to send a real English-to-Sinhala test through the same provider-specific translation and response-validation path used for subtitle batches. It adds an optional per-user Windows File Explorer context-menu command, **Translate via HADOC Sub**, for SRT and supported video files. Selecting an SRT opens it and starts/resumes translation; selecting a video opens it and starts Groq Whisper subtitle generation. The context-menu option can be installed or removed from the app without administrator rights. App icon and compressed FFmpeg packaging remain included.
 
 ### Generate Sinhala subtitles from a video
 

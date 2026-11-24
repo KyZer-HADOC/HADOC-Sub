@@ -13,6 +13,8 @@ from app import (
     parse_retry_seconds,
     format_srt_timestamp,
     transcription_segments_to_srt,
+    build_context_menu_command,
+    CONTEXT_MENU_EXTENSIONS,
 )
 
 
@@ -127,6 +129,18 @@ class ApiHelperTests(unittest.TestCase):
         )
 
 
+
+    def test_context_menu_command_quotes_exe_path_and_selected_file(self):
+        command = build_context_menu_command(r"C:\Program Files\HADOC Sub\HADOC-Sub.exe")
+        self.assertEqual(
+            command,
+            '"C:\\Program Files\\HADOC Sub\\HADOC-Sub.exe" --open "%1"',
+        )
+
+    def test_context_menu_includes_srt_and_supported_video_types(self):
+        self.assertIn(".srt", CONTEXT_MENU_EXTENSIONS)
+        for extension in (".mp4", ".mkv", ".avi", ".mov", ".webm"):
+            self.assertIn(extension, CONTEXT_MENU_EXTENSIONS)
 
     def test_format_srt_timestamp(self):
         self.assertEqual(format_srt_timestamp(3661.234), "01:01:01,234")
